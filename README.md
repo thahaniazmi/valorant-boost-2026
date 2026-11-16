@@ -119,7 +119,7 @@
 ### Day-to-Day Workflow:
 
 1. **Start the Companion**:
-   * Double-click [Valorant_Optimizer.bat](file:///c:/Users/thaha_yquhle8/Projects/valorant%20optimise/Valorant_Optimizer.bat) *(you can copy this file to your Desktop)*.
+   * Double-click **`Valorant_Optimizer.bat`** *(you can copy this file to your Desktop)*.
    * If prompted by Windows UAC (Admin prompt), click **Yes**.
 2. **Standby Screen**:
    * The script clears shader caches and waits:
@@ -180,10 +180,10 @@
 
 | File | Description |
 | :--- | :--- |
-| **[Valorant_Optimizer.bat](file:///c:/Users/thaha_yquhle8/Projects/valorant%20optimise/Valorant_Optimizer.bat)** | **The single all-in-one file**. Fully standalone hybrid batch/PowerShell runner. |
-| **[valorant_optimizer.ps1](file:///c:/Users/thaha_yquhle8/Projects/valorant%20optimise/valorant_optimizer.ps1)** | Native PowerShell implementation for users who prefer raw `.ps1` execution. |
-| **[run.bat](file:///c:/Users/thaha_yquhle8/Projects/valorant%20optimise/run.bat)** | Convenient alias launcher. |
-| **[README.md](file:///c:/Users/thaha_yquhle8/Projects/valorant%20optimise/README.md)** | This comprehensive documentation and reference guide. |
+| **`Valorant_Optimizer.bat`** | **The single all-in-one file**. Fully standalone hybrid batch/PowerShell runner. |
+| **`valorant_optimizer.ps1`** | Native PowerShell implementation for users who prefer raw `.ps1` execution. |
+| **`run.bat`** | Convenient alias launcher. |
+| **`README.md`** | This comprehensive documentation and reference guide. |
 
 ---
 
