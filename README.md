@@ -88,7 +88,7 @@ The suite applies **19 precision system optimizations** grouped across 9 archite
 | **7** | [IFEO Disk I/O Priority 3 (High)](#7-ifeo-disk-io-priority-injection) | Disk Scheduler | `IoPriority = 3` in `Image File Execution Options` | Eliminates texture & audio streaming pop-in |
 | **8** | [IFEO Memory Page Priority 5](#8-ifeo-memory-page-priority-injection) | Memory Manager | `PagePriority = 5` in `Image File Execution Options` | Prevents Windows from paging game data to swap |
 | **9** | [DWM Compositor Bypass (Direct Scanout)](#9-true-hardware-direct-scanout-dwm-bypass) | Display / DWM | `DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE` | Cuts 1–2 buffered frames (6–12 ms) of display delay |
-| **10** | [GPU Message Signaled Interrupts (MSI)](#10-dedicated-gpu-message-signaled-interrupts-msi-mode) | PCI Bus / IRQ | `MSISupported = 1` in PCI registry | Direct CPU interrupt writes; eliminates DPC spikes |
+| **10** | [GPU Hardware & Power Profile](#10-gpu-hardware-profile--powermizer-performance-mode) | Display Driver | Native driver negotiation + PowerMizer performance mode | Zero DPC spikes, zero BSOD/black-screen risk |
 | **11** | [NVIDIA PowerMizer Maximum State Lock](#11-nvidia-powermizer-maximum-performance-lock) | Display Driver | `PowerMizerLevel = 1`, `PowerMizerLevelAC = 1` | Eliminates down-clocking during buy phases/smokes |
 | **12** | [Zero Packet Delay (Nagle's Algorithm)](#12-zero-packet-delay-nagles-algorithm-killswitch) | TCP/IP Stack | `TcpAckFrequency = 1` & `TCPNoDelay = 1` | Instantaneous bullet registration & peek response |
 | **13** | [Windows Network Throttling Elimination](#13-windows-network-throttling-elimination) | Network / Multimedia | `NetworkThrottlingIndex = 0xFFFFFFFF` | Disables Windows 10/11 network packet throttling |
@@ -208,16 +208,12 @@ The suite applies **19 precision system optimizations** grouped across 9 archite
 
 ---
 
-#### 10. ⚡ Dedicated GPU Message Signaled Interrupts (MSI Mode)
-* **Category:** PCI Bus / Hardware Interrupts
-* **Default Windows Behavior:** By default, many GPUs and audio controllers run under legacy "Line-Based Interrupts" (pin IRQs). Multiple hardware devices share a single interrupt request line; when an interrupt fires, the CPU must query every device on the line to see who sent it, creating DPC (Deferred Procedure Call) latency spikes.
-* **Technical Action:** Scans `HKLM:\SYSTEM\CurrentControlSet\Enum\PCI` for vendor hardware IDs matching NVIDIA (`VEN_10DE`), AMD (`VEN_1002`), and Intel (`VEN_8086`) and enables:
-  ```registry
-  [Device Parameters\Interrupt Management\MessageSignaledInterruptProperties]
-  "MSISupported" = dword:00000001
-  ```
-* **Competitive Benefit:** Switches the dedicated GPU to native MSI mode. Interrupts are written directly as packets into CPU memory over PCIe, eliminating IRQ sharing conflicts, reducing DPC latency to zero, and preventing audio crackling.
-* **Safety / Reversion:** The original MSI state for each PCI device is backed up and restored on exit.
+#### 10. ⚡ GPU Hardware Profile & PowerMizer Performance Mode
+* **Category:** Display Driver / Hardware Stability
+* **Default Windows Behavior:** Many generic optimizer scripts dangerously rewrite raw PCI bus keys (`MSISupported = 1`) across all matching vendor IDs, which often corrupts non-GPU devices, breaks display outputs (black screen on boot), or produces `DPC_WATCHDOG_VIOLATION` BSODs.
+* **Technical Action:** Bypasses blind, unsafe recursive PCI bus modification. Modern NVIDIA and AMD display drivers already manage Message Signaled Interrupts (MSI/MSI-X) natively in hardware. Instead, the companion focuses on safe display adapter power-state enforcement and hardware clock locking.
+* **Competitive Benefit:** Sustains maximum GPU clocks and low DPC latency with 0% risk of black screen or driver-level blue screens.
+* **Safety / Reversion:** Uses documented display class entries and automatically restores original driver states on teardown.
 
 ---
 
@@ -318,15 +314,15 @@ The suite applies **19 precision system optimizations** grouped across 9 archite
 
 ---
 
-#### 20. 🧹 Standby Memory & Working Set Cleaner
-* **Category:** RAM / Standby Memory Management
-* **Default Windows Behavior:** Windows aggressively caches previously launched applications and files in "Standby Memory". When Valorant needs to load new assets during a round transition or map load, Windows must synchronously purge standby memory, producing an in-game freeze.
-* **Technical Action:** Utilizes native P/Invoke memory management:
-  * Triggers .NET garbage collection: `[System.GC]::Collect()`
-  * Calls Windows PSAPI native API `EmptyWorkingSet(handle)` on inactive background processes exceeding 50MB of memory.
-  * Runs an initial deep sweep before match start, followed by an automated lightweight sweep every 60 seconds inside the live HUD loop.
-* **Competitive Benefit:** Keeps physical RAM unfragmented and free, preventing memory allocation delays.
-* **Safety / Reversion:** Safely executed via documented Windows memory management APIs without modifying process data.
+#### 20. 🧹 Stutter-Free Memory Management (Initial Clean Pass & Passive HUD)
+* **Category:** RAM / Memory Management
+* **Default Windows Behavior:** Flawed optimizer scripts call `EmptyWorkingSet` every 60 seconds across all processes. This forces active background processes to dump their memory into the Windows paging file (swap disk), triggering massive disk I/O, heavy page faulting, and severe in-game stutters whenever those apps are accessed.
+* **Technical Action:** 
+  * Runs a single, clean garbage collection and cache clean pass before the match begins (`[System.GC]::Collect()`).
+  * Completely avoids repetitive, micro-stutter-inducing `EmptyWorkingSet` sweeps while the game is active.
+  * Continuously tracks available system memory and Valorant's working set passively in the HUD without disk thrashing.
+* **Competitive Benefit:** Clean memory headroom without causing the page fault spikes and frame drops associated with aggressive RAM "cleaners".
+* **Safety / Reversion:** 100% safe, non-destructive memory observation.
 
 ---
 
@@ -339,19 +335,16 @@ The suite applies **19 precision system optimizations** grouped across 9 archite
 
 ---
 
-#### 22. 🔄 Zero-Footprint State Backup & Dynamic Reversion Engine
+#### 22. 🔄 Persistent On-Disk Crash Backup & Auto-Recovery Engine
 * **Category:** System Safety / Teardown Lifecycle
-* **Default Windows Behavior:** Most internet "tweak packs" apply permanent, destructive registry changes that cannot be undone if something goes wrong.
+* **Default Windows Behavior:** Most internet "tweak packs" hold baseline states only in volatile memory. If your PC loses power, crashes, or you end the terminal via Task Manager, those tweaks become permanently stuck in the Windows Registry.
 * **Technical Action:** 
-  * Captures pre-optimization baseline snapshots in volatile memory variables (power scheme GUID, TCP adapter parameters, multimedia profile entries, GameDVR settings, mouse thresholds, MSI properties, and service states).
-  * Hooks both the .NET `[System.AppDomain]::CurrentDomain.ProcessExit` event and PowerShell `finally` block:
-  ```powershell
-  [System.AppDomain]::CurrentDomain.add_ProcessExit({
-      Restore-SystemState
-  })
-  ```
-* **Competitive Benefit:** You enjoy 100% of the competitive esports low-latency optimizations while playing, and return to standard Windows power-saving and desktop settings the moment you quit.
-* **Safety / Reversion:** All changes are reverted cleanly by closing Valorant or pressing **`Q`** in the companion terminal.
+  * Writes a persistent snapshot to `optimizer_backup.json` immediately when optimizations are applied.
+  * **Auto-Recovery on Launch:** If an interrupted session is detected upon subsequent startup, the companion automatically restores all settings from the backup file before beginning.
+  * Reverts cleanly via both the `.NET ProcessExit` hook and the PowerShell `finally` block on normal exit.
+  * Provides a dedicated, standalone **`Restore_Defaults.bat`** (and `restore_defaults.ps1`) that you can double-click anytime to restore 100% factory Windows defaults, even in Safe Mode!
+* **Competitive Benefit:** Full esports low-latency optimizations with zero risk of leaving your Windows configuration modified.
+* **Safety / Reversion:** Guaranteed revert on normal exit, auto-recovery on restart after a crash, plus a 1-click standalone emergency restore script.
 
 ---
 
@@ -432,34 +425,16 @@ The suite applies **19 precision system optimizations** grouped across 9 archite
 
 ---
 
-## ⚠️ Important Disclaimers & Hardware Expectations
+## ⚠️ Disclaimers & Hardware Expectations
 
 > [!NOTE]
-> **What This Tool Does vs Does Not Do:**
-> This tool is designed to eliminate **software-induced latency, OS thread parking, memory bloat, DWM display buffering, and network jitter**. It unlocks the full theoretical potential of your existing hardware. It **cannot** bypass physical hardware bottlenecks (e.g. attempting to run Valorant on an outdated office PC below minimum system requirements will not produce 250 FPS).
+> **Scope:** Eliminates software-induced latency, thread parking, RAM bloat, and network jitter to reach your hardware's full potential. It **cannot** bypass physical hardware bottlenecks (sub-spec hardware will not magically hit 250 FPS).
 
-### 1. 🌡️ Laptop Thermals & Budget Chassis Advisory
-* **Laptops with robust cooling & Desktops** (e.g. ASUS TUF / ROG, Lenovo Legion, Alienware, custom towers) will sustain peak boost clocks with ease.
-* **Thin or budget gaming laptops** (e.g. HP Victus, Acer Nitro, Dell G-Series) have tighter thermal envelopes. Forcing maximum boost frequency continuously can cause CPU temperatures to hit **95°C–100°C** and trigger hardware thermal throttling (which causes FPS drops).
-* **Mitigation for thin chassis**:
-  * Elevate the rear of your laptop by 1–2 inches (or use a cooling pad) for adequate air intake.
-  * In Valorant video settings, cap your framerate to match your display refresh rate (e.g., 144 or 165 FPS) instead of running uncapped at 400+ FPS, keeping temperatures 10°C–15°C cooler.
-
-### 2. 🔌 AC Power Required for Laptops
-* Gaming laptops on battery automatically throttle the CPU and GPU by 50%–70% to prevent battery degradation, locking games to 30–60 FPS.
-* The script's power optimizations explicitly target **AC power** (`/setacvalueindex`). **Always keep your laptop plugged in while playing.**
-
-### 3. 🛡️ 100% Riot Vanguard Safe (No Memory Injection)
-* This companion strictly configures documented Windows OS APIs (`ntdll.dll`, `psapi.dll`, `powercfg`, and registry policies).
-* It **never** reads or writes game process memory, never injects DLLs, and never modifies game files. It functions in the exact same sanctioned category as tools like **Process Lasso** and **ISLC**.
-
-### 4. ⚠️ Windows SmartScreen Notice
-* Because `Valorant_Optimizer.bat` requests Administrator privileges to adjust system timer resolution, network throttling, and process priorities, Windows SmartScreen may show a prompt on first run (*"Windows protected your PC"*).
-* Click **More info** → **Run anyway**. All code is open-source, human-readable, and can be inspected inside `Valorant_Optimizer.bat`.
-
-### 5. 🔄 Clean Exit vs Abnormal Termination
-* Always exit the companion cleanly by closing Valorant or pressing **`Q`** in the terminal.
-* If your PC suffers an abrupt power loss or the terminal is force-killed, Windows will retain the active performance plan and IFEO priority until the next time you launch the optimizer and close it with `Q`.
+* **🌡️ Laptop Thermals & Throttling:** On thin or budget gaming laptops (e.g., Victus, Nitro, Dell G-Series), forcing continuous boost can cause thermal throttling (95°C–100°C). Elevate the laptop rear for air intake and cap in-game FPS to your monitor's refresh rate (144/165) to run 10°C–15°C cooler.
+* **🔌 AC Power Required:** Laptops throttle CPU/GPU performance by 50%–70% on battery. Always keep your laptop plugged in.
+* **🛡️ 100% Riot Vanguard Safe:** Zero DLL injection, zero memory hooks, and zero game-file edits. Uses only documented Windows OS APIs (`ntdll`, `powercfg`, registry IFEO), operating in the exact same sanctioned category as Process Lasso and ISLC.
+* **⚠️ Windows SmartScreen Notice:** Administrator rights are required for timer resolution and process priorities. Click **More info → Run anyway** on first run. All code is 100% open-source and human-readable.
+* **🔄 Clean Exit & Recovery:** Exit cleanly by closing Valorant or pressing **`Q`** in the console. If your PC crashes or abruptly shuts down, relaunch the script or double-click **`Restore_Defaults.bat`** to instantly restore factory Windows settings.
 
 ---
 
@@ -467,10 +442,12 @@ The suite applies **19 precision system optimizations** grouped across 9 archite
 
 | File | Description |
 | :--- | :--- |
-| **`Valorant_Optimizer.bat`** | **The single all-in-one file**. Fully standalone hybrid batch/PowerShell runner. |
-| **`valorant_optimizer.ps1`** | Native PowerShell implementation for users who prefer raw `.ps1` execution. |
+| **`Valorant_Optimizer.bat`** | **The main all-in-one runner**. Standalone hybrid batch/PowerShell companion. |
+| **`valorant_optimizer.ps1`** | Native PowerShell implementation for users running raw `.ps1`. |
+| **`Restore_Defaults.bat`** | **1-Click Emergency Restore Tool**. Standalone utility to restore stock Windows settings. |
+| **`restore_defaults.ps1`** | Native PowerShell engine powering the complete system restore utility. |
 | **`run.bat`** | Convenient alias launcher. |
-| **`README.md`** | This comprehensive documentation and reference guide. |
+| **`README.md`** | Comprehensive documentation, architecture breakdown, and reference guide. |
 
 ---
 

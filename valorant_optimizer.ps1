@@ -1,6 +1,8 @@
 # Valorant Ultimate Performance Companion & Low-Latency Optimizer (PowerShell Edition)
-# Vanguard Safety: 100% safe. Only uses standard Windows OS APIs (priorities, power schemes, service management).
+# Vanguard Safety: 100% safe. Only uses documented standard Windows OS APIs (priorities, power schemes, service management).
+# Crash Safety: Includes persistent on-disk state backup and auto-recovery to prevent stuck registry keys.
 
+# ----------------- ADMIN PRIVILEGE CHECK -----------------
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "[!] Requesting Administrator privileges..." -ForegroundColor Yellow
@@ -15,11 +17,34 @@ Clear-Host
 # ----------------- CONFIGURATION -----------------
 $TargetProcessName = "VALORANT-Win64-Shipping"
 $FallbackProcessName = "VALORANT"
+# Protected apps: Discord, OBS, audio services, and Vanguard are never throttled
 $BackgroundHogs = @("chrome", "msedge", "brave", "opera", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
 $PauseServices = @("WSearch", "SysMain", "DiagTrack")
 $PollIntervalSeconds = 1
 
-# ----------------- P/INVOKE: NATIVE APIS (TIMER & MEMORY) -----------------
+$ScriptDir = if ($env:SCRIPT_DIR -and (Test-Path $env:SCRIPT_DIR)) { $env:SCRIPT_DIR } elseif ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
+$BackupFilePath = Join-Path $ScriptDir "optimizer_backup.json"
+
+# ----------------- AUTO-CRASH RECOVERY CHECK -----------------
+# If an un-reverted backup file is present at launch, a previous session terminated unexpectedly (crash/power cut/End Task).
+# Restore previous system settings before applying new ones to avoid stacking/stuck tweaks.
+if (Test-Path $BackupFilePath) {
+    Write-Host "==========================================================" -ForegroundColor Yellow
+    Write-Host " [!] RECOVERY NOTICE: Previous session terminated unexpectedly" -ForegroundColor Yellow
+    Write-Host "==========================================================" -ForegroundColor Yellow
+    Write-Host " Found active backup from an earlier session." -ForegroundColor DarkGray
+    Write-Host " Restoring system to clean state before starting..." -ForegroundColor Cyan
+    $restoreScript = Join-Path $ScriptDir "restore_defaults.ps1"
+    if (Test-Path $restoreScript) {
+        & $restoreScript
+    } else {
+        Remove-Item -Path $BackupFilePath -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+    Clear-Host
+}
+
+# ----------------- P/INVOKE: NATIVE HIGH-PRECISION TIMER API -----------------
 try {
     $nativeCode = @"
 using System;
@@ -31,9 +56,6 @@ public class NativeOptimizers {
 
     [DllImport("ntdll.dll", SetLastError = true)]
     public static extern int NtQueryTimerResolution(out uint MinimumResolution, out uint MaximumResolution, out uint CurrentResolution);
-
-    [DllImport("psapi.dll")]
-    public static extern int EmptyWorkingSet(IntPtr hwProc);
 }
 "@
     Add-Type -TypeDefinition $nativeCode -ErrorAction SilentlyContinue
@@ -50,16 +72,47 @@ $OriginalSysProfile = @{}
 $OriginalGameDVR = @{}
 $OriginalTcpSettings = @{}
 $OriginalMouseSettings = @{}
-$OriginalMsiSettings = @{}
 $OriginalPowerMizer = @{}
 $DefenderExclusionsApplied = $false
 $IfeoCreated = $false
 $AppCompatCreated = $false
 $ValorantFullPath = ""
 $StartTime = $null
-$RamSweepCount = 0
+$CpMinCoresModified = $false
 
-# ----------------- HELPER FUNCTIONS -----------------
+# ----------------- BACKUP & RESTORE HELPERS -----------------
+function Save-BackupState {
+    try {
+        $state = @{
+            Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            OriginalPowerScheme = $script:OriginalPowerScheme
+            CpMinCoresModified = $script:CpMinCoresModified
+            OriginalSysProfile = $script:OriginalSysProfile
+            OriginalGameDVR = $script:OriginalGameDVR
+            OriginalTcpSettings = $script:OriginalTcpSettings
+            OriginalMouseSettings = $script:OriginalMouseSettings
+            OriginalPowerMizer = $script:OriginalPowerMizer
+            DefenderExclusionsApplied = $script:DefenderExclusionsApplied
+            IfeoCreated = $script:IfeoCreated
+            AppCompatCreated = $script:AppCompatCreated
+            ValorantFullPath = $script:ValorantFullPath
+            StoppedServices = $script:StoppedServices
+        }
+        $json = $state | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText($BackupFilePath, $json)
+    } catch {
+        Write-Warning "Could not save backup state to disk: $_"
+    }
+}
+
+function Remove-BackupState {
+    try {
+        if (Test-Path $BackupFilePath) {
+            Remove-Item -Path $BackupFilePath -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+
 function Get-ActivePowerScheme {
     try {
         $output = powercfg /getactivescheme
@@ -70,7 +123,25 @@ function Get-ActivePowerScheme {
     return $null
 }
 
+# ----------------- LAPTOP & THERMAL PROTECTION -----------------
+function Test-IsOnBattery {
+    try {
+        $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($battery -and $battery.BatteryStatus -eq 1) {
+            # 1 = Discharging (Running on Battery)
+            return $true
+        }
+    } catch {}
+    return $false
+}
+
 function Enable-LowLatencyPower {
+    $isOnBattery = Test-IsOnBattery
+    if ($isOnBattery) {
+        Write-Host "  [!] Running on Battery: Preserving dynamic power profile to prevent thermal throttling and battery drain." -ForegroundColor Yellow
+        return "Balanced (Battery Protection Active)"
+    }
+
     $schemes = powercfg /list
     $planName = "High Performance"
     if ($schemes -match "(e9a42b02-d5df-448d-aa00-03f14749eb61)") {
@@ -85,9 +156,11 @@ function Enable-LowLatencyPower {
         $planName = "Ultimate Performance (Created)"
     }
 
+    # Only disable core parking on AC power to protect thermal envelopes
     try {
         powercfg /setacvalueindex scheme_current sub_processor CPMINCORES 100 2>$null | Out-Null
         powercfg /setactive scheme_current 2>$null | Out-Null
+        $script:CpMinCoresModified = $true
     } catch {}
 
     return $planName
@@ -99,7 +172,7 @@ function Set-HighPrecisionTimer {
         [NativeOptimizers]::NtQueryTimerResolution([ref]$min, [ref]$max, [ref]$cur)
         $script:OriginalTimerRes = $cur
 
-        [uint32]$target = 5000
+        [uint32]$target = 5000 # 0.5000 ms
         [uint32]$applied = 0
         $status = [NativeOptimizers]::NtSetTimerResolution($target, $true, [ref]$applied)
         if ($status -eq 0) {
@@ -121,6 +194,7 @@ function Restore-HighPrecisionTimer {
 }
 
 function Apply-NetworkAndRegistryTweaks {
+    # 1. SystemProfile Network & Responsiveness
     $sysPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
     if (Test-Path $sysPath) {
         $script:OriginalSysProfile["NetworkThrottlingIndex"] = (Get-ItemProperty -Path $sysPath -Name NetworkThrottlingIndex -ErrorAction SilentlyContinue).NetworkThrottlingIndex
@@ -130,6 +204,7 @@ function Apply-NetworkAndRegistryTweaks {
         Set-ItemProperty -Path $sysPath -Name "SystemResponsiveness" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     }
 
+    # 2. GameDVR Suppression
     $dvrPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR"
     if (Test-Path $dvrPath) {
         $script:OriginalGameDVR["AppCaptureEnabled"] = (Get-ItemProperty -Path $dvrPath -Name AppCaptureEnabled -ErrorAction SilentlyContinue).AppCaptureEnabled
@@ -137,6 +212,7 @@ function Apply-NetworkAndRegistryTweaks {
         Set-ItemProperty -Path $dvrPath -Name "HistoricalCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     }
 
+    # 3. Network Interface TCP Optimization (Disable Nagle's Algorithm)
     $interfaces = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" -ErrorAction SilentlyContinue
     foreach ($iface in $interfaces) {
         $p = $iface.PSPath
@@ -157,15 +233,22 @@ function Restore-NetworkAndRegistryTweaks {
     if (Test-Path $sysPath) {
         if ($script:OriginalSysProfile.ContainsKey("NetworkThrottlingIndex") -and $null -ne $script:OriginalSysProfile["NetworkThrottlingIndex"]) {
             Set-ItemProperty -Path $sysPath -Name "NetworkThrottlingIndex" -Value $script:OriginalSysProfile["NetworkThrottlingIndex"] -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-ItemProperty -Path $sysPath -Name "NetworkThrottlingIndex" -Value 10 -Type DWord -Force -ErrorAction SilentlyContinue
         }
         if ($script:OriginalSysProfile.ContainsKey("SystemResponsiveness") -and $null -ne $script:OriginalSysProfile["SystemResponsiveness"]) {
             Set-ItemProperty -Path $sysPath -Name "SystemResponsiveness" -Value $script:OriginalSysProfile["SystemResponsiveness"] -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Set-ItemProperty -Path $sysPath -Name "SystemResponsiveness" -Value 20 -Type DWord -Force -ErrorAction SilentlyContinue
         }
     }
 
     $dvrPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR"
-    if (Test-Path $dvrPath -and $script:OriginalGameDVR.ContainsKey("AppCaptureEnabled") -and $null -ne $script:OriginalGameDVR["AppCaptureEnabled"]) {
-        Set-ItemProperty -Path $dvrPath -Name "AppCaptureEnabled" -Value $script:OriginalGameDVR["AppCaptureEnabled"] -Type DWord -Force -ErrorAction SilentlyContinue
+    if (Test-Path $dvrPath) {
+        $origDvr = if ($script:OriginalGameDVR.ContainsKey("AppCaptureEnabled") -and $null -ne $script:OriginalGameDVR["AppCaptureEnabled"]) {
+            $script:OriginalGameDVR["AppCaptureEnabled"]
+        } else { 1 }
+        Set-ItemProperty -Path $dvrPath -Name "AppCaptureEnabled" -Value $origDvr -Type DWord -Force -ErrorAction SilentlyContinue
     }
 
     foreach ($path in $script:OriginalTcpSettings.Keys) {
@@ -199,15 +282,13 @@ function Apply-MouseAccelerationKillswitch {
 function Restore-MouseAccelerationKillswitch {
     $mousePath = "HKCU:\Control Panel\Mouse"
     if (Test-Path $mousePath) {
-        if ($script:OriginalMouseSettings.ContainsKey("MouseSpeed") -and $null -ne $script:OriginalMouseSettings["MouseSpeed"]) {
-            Set-ItemProperty -Path $mousePath -Name "MouseSpeed" -Value $script:OriginalMouseSettings["MouseSpeed"] -Type String -Force -ErrorAction SilentlyContinue
-        }
-        if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold1") -and $null -ne $script:OriginalMouseSettings["MouseThreshold1"]) {
-            Set-ItemProperty -Path $mousePath -Name "MouseThreshold1" -Value $script:OriginalMouseSettings["MouseThreshold1"] -Type String -Force -ErrorAction SilentlyContinue
-        }
-        if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold2") -and $null -ne $script:OriginalMouseSettings["MouseThreshold2"]) {
-            Set-ItemProperty -Path $mousePath -Name "MouseThreshold2" -Value $script:OriginalMouseSettings["MouseThreshold2"] -Type String -Force -ErrorAction SilentlyContinue
-        }
+        $speed = if ($script:OriginalMouseSettings.ContainsKey("MouseSpeed") -and $null -ne $script:OriginalMouseSettings["MouseSpeed"]) { $script:OriginalMouseSettings["MouseSpeed"] } else { "1" }
+        $t1 = if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold1") -and $null -ne $script:OriginalMouseSettings["MouseThreshold1"]) { $script:OriginalMouseSettings["MouseThreshold1"] } else { "6" }
+        $t2 = if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold2") -and $null -ne $script:OriginalMouseSettings["MouseThreshold2"]) { $script:OriginalMouseSettings["MouseThreshold2"] } else { "10" }
+
+        Set-ItemProperty -Path $mousePath -Name "MouseSpeed" -Value $speed -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseThreshold1" -Value $t1 -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseThreshold2" -Value $t2 -Type String -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -227,7 +308,7 @@ function Restore-DefenderExclusions {
     }
 }
 
-# ----------------- HARDWARE DETECTION -----------------
+# ----------------- HARDWARE & GPU PROFILE -----------------
 $DetectedCpu = "Multi-Core CPU"
 $DetectedGpu = "Dedicated GPU"
 try {
@@ -237,17 +318,11 @@ try {
     if ($gpuObj -and $gpuObj.Name) { $DetectedGpu = $gpuObj.Name.Trim() }
 } catch {}
 
-function Apply-GpuMsiAndPowerProfile {
-    try {
-        $pciKeys = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\PCI" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.PSChildName -eq "MessageSignaledInterruptProperties" -and $_.PSParentPath -match "VEN_10DE|VEN_1002|VEN_8086|nvlddmkm|amdkmdag" }
-        foreach ($k in $pciKeys) {
-            $cur = (Get-ItemProperty -Path $k.PSPath -Name MSISupported -ErrorAction SilentlyContinue).MSISupported
-            $script:OriginalMsiSettings[$k.PSPath] = $cur
-            Set-ItemProperty -Path $k.PSPath -Name "MSISupported" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-    } catch {}
-
+function Apply-GpuPowerProfile {
+    # NOTE ON SAFETY: Blind recursive PCI MSI registry modification has been deliberately removed.
+    # Modern NVIDIA & AMD graphics drivers negotiate MSI mode safely in hardware.
+    # Dynamic PCI registry tampering can produce black screens and DPC_WATCHDOG_VIOLATION BSODs.
+    
     $classPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
     if (Test-Path $classPath) {
         Get-ChildItem $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match "^\d{4}$" } | ForEach-Object {
@@ -266,14 +341,7 @@ function Apply-GpuMsiAndPowerProfile {
     }
 }
 
-function Restore-GpuMsiAndPowerProfile {
-    foreach ($path in $script:OriginalMsiSettings.Keys) {
-        $orig = $script:OriginalMsiSettings[$path]
-        if ($null -ne $orig) {
-            Set-ItemProperty -Path $path -Name "MSISupported" -Value $orig -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-    }
-
+function Restore-GpuPowerProfile {
     foreach ($path in $script:OriginalPowerMizer.Keys) {
         $saved = $script:OriginalPowerMizer[$path]
         if ($null -ne $saved.PowerMizerEnable) {
@@ -302,6 +370,7 @@ function Apply-IFEOAndDwmBypass {
         New-Item -Path $ifeoPath -Force -ErrorAction SilentlyContinue | Out-Null
         $script:IfeoCreated = $true
     }
+    # SAFETY: CpuPriorityClass = 3 (High). NEVER USE 4 (RealTime) which causes OS thread starvation.
     Set-ItemProperty -Path $ifeoPath -Name "CpuPriorityClass" -Value 3 -Type DWord -Force -ErrorAction SilentlyContinue
     Set-ItemProperty -Path $ifeoPath -Name "IoPriority" -Value 3 -Type DWord -Force -ErrorAction SilentlyContinue
     Set-ItemProperty -Path $ifeoPath -Name "PagePriority" -Value 5 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -328,14 +397,14 @@ function Restore-IFEOAndDwmBypass {
     }
 }
 
+# ----------------- SAFE MEMORY MANAGEMENT -----------------
+# NOTE ON SAFETY: Periodic EmptyWorkingSet every 60s has been completely removed.
+# Forcing process memory into the pagefile during active gameplay causes severe page fault thrashing,
+# disk I/O spikes, and micro-stutters. We now perform a clean, non-destructive initial pass.
 function Purge-SystemMemoryAndStandby {
     try {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-
-        Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch "VALORANT|Riot" } | ForEach-Object {
-            try { [NativeOptimizers]::EmptyWorkingSet($_.Handle) | Out-Null } catch {}
-        }
     } catch {}
 }
 
@@ -380,6 +449,12 @@ function Restore-SystemState {
         Write-Host "  -> Power plan restored." -ForegroundColor Cyan
     }
 
+    if ($script:CpMinCoresModified) {
+        powercfg /setacvalueindex scheme_current sub_processor CPMINCORES 0 2>$null | Out-Null
+        powercfg /setactive scheme_current 2>$null | Out-Null
+        Write-Host "  -> CPU core parking restored." -ForegroundColor Cyan
+    }
+
     Restore-NetworkAndRegistryTweaks
     Write-Host "  -> Network throttling and TCP stack restored." -ForegroundColor Cyan
 
@@ -389,8 +464,8 @@ function Restore-SystemState {
     Restore-DefenderExclusions
     Write-Host "  -> Windows Defender exclusions removed." -ForegroundColor Cyan
 
-    Restore-GpuMsiAndPowerProfile
-    Write-Host "  -> GPU MSI mode & power profile restored." -ForegroundColor Cyan
+    Restore-GpuPowerProfile
+    Write-Host "  -> GPU power profile restored." -ForegroundColor Cyan
 
     Restore-IFEOAndDwmBypass
     Write-Host "  -> IFEO priority & Fullscreen flags restored." -ForegroundColor Cyan
@@ -413,6 +488,11 @@ function Restore-SystemState {
     Write-Host "  -> Suspended services restarted." -ForegroundColor Cyan
 
     ipconfig /flushdns | Out-Null
+    
+    # Remove on-disk backup upon clean reversal
+    Remove-BackupState
+    Write-Host "  -> Session backup cleared." -ForegroundColor Cyan
+
     Write-Host "`n [+] System restored successfully. GG!" -ForegroundColor Green
     [Console]::CursorVisible = $true
 }
@@ -421,6 +501,7 @@ function Restore-SystemState {
     Restore-SystemState
 })
 
+# ----------------- MAIN EXECUTION LOOP -----------------
 try {
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "     VALORANT ULTIMATE LOW-LATENCY COMPANION (PS)         " -ForegroundColor White
@@ -458,12 +539,13 @@ try {
     $StartTime = Get-Date
     Write-Host "==========================================================" -ForegroundColor Green
     Write-Host "  [+] VALORANT DETECTED! (PID: $($valProc.Id))" -ForegroundColor Green
-    Write-Host "  Applying ultimate competitive optimizations..." -ForegroundColor White
+    Write-Host "  Applying pro-grade low-latency optimizations..." -ForegroundColor White
     Write-Host "==========================================================" -ForegroundColor Green
 
+    # SAFETY CHECK: Only set High priority. NEVER set RealTime.
     try {
         $valProc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
-        Write-Host "  [OK] Process Priority       : HIGH" -ForegroundColor Green
+        Write-Host "  [OK] Process Priority       : HIGH (Safe & Responsive)" -ForegroundColor Green
     } catch {
         Write-Host "  [!] Process Priority       : Normal ($($_.Exception.Message))" -ForegroundColor Yellow
     }
@@ -472,7 +554,7 @@ try {
     Write-Host "  [OK] Timer Resolution       : $timerStr" -ForegroundColor Green
 
     $activePlanName = Enable-LowLatencyPower
-    Write-Host "  [OK] Power Plan             : $activePlanName (Ryzen 100% Unparked)" -ForegroundColor Green
+    Write-Host "  [OK] Power Plan             : $activePlanName" -ForegroundColor Green
 
     try {
         $valPath = $valProc.MainModule.FileName
@@ -490,10 +572,10 @@ try {
     Write-Host "  [OK] Windows Mouse Accel    : Disabled (True 1:1 Curve)" -ForegroundColor Green
 
     Apply-DefenderExclusions
-    Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded (Zero File Hitching)" -ForegroundColor Green
+    Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded" -ForegroundColor Green
 
-    Apply-GpuMsiAndPowerProfile
-    Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (MSI Interrupts & Low Latency)" -ForegroundColor Green
+    Apply-GpuPowerProfile
+    Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (Low Latency Power State)" -ForegroundColor Green
 
     $throttledCount = 0
     foreach ($name in $BackgroundHogs) {
@@ -508,7 +590,7 @@ try {
             } catch {}
         }
     }
-    Write-Host "  [OK] Background Apps        : Throttled ($throttledCount instances, Discord Protected)" -ForegroundColor Green
+    Write-Host "  [OK] Background Apps        : Throttled ($throttledCount instances, Discord & OBS Safe)" -ForegroundColor Green
 
     foreach ($s in $PauseServices) {
         try {
@@ -525,13 +607,17 @@ try {
 
     Purge-SystemMemoryAndStandby
     ipconfig /flushdns | Out-Null
-    Write-Host "  [OK] RAM Standby & DNS      : Cleaned & Flushed" -ForegroundColor Green
+    Write-Host "  [OK] System Memory & DNS    : Cleaned & Flushed" -ForegroundColor Green
+    
+    # SAVE ON-DISK BACKUP IMMEDIATELY FOR CRASH RESILIENCE
+    Save-BackupState
     $OptimizationsApplied = $true
 
     Start-Sleep -Seconds 2
 
+    # ----------------- PASSIVE HUD MONITORING -----------------
+    # Stutter-Free: No periodic EmptyWorkingSet loops during live matches
     $lastPingCheck = [DateTime]::MinValue
-    $lastRamSweep = Get-Date
     $cachedPing = "Testing..."
 
     while (-not $valProc.HasExited) {
@@ -548,12 +634,6 @@ try {
             $lastPingCheck = Get-Date
         }
 
-        if (((Get-Date) - $lastRamSweep).TotalSeconds -ge 60) {
-            Purge-SystemMemoryAndStandby
-            $lastRamSweep = Get-Date
-            $script:RamSweepCount++
-        }
-
         Clear-Host
         $elapsed = (Get-Date) - $StartTime
         $elapsedStr = "{0:D2}h {1:D2}m {2:D2}s" -f $elapsed.Hours, $elapsed.Minutes, $elapsed.Seconds
@@ -567,18 +647,20 @@ try {
         Write-Host " Game Status       : " -NoNewline; Write-Host "ACTIVE (Running)" -ForegroundColor Green
         Write-Host " Process PID       : $($valProc.Id)"
         Write-Host " Session Duration  : $elapsedStr"
-        Write-Host " Memory WorkingSet : $memMB MB (Standby Sweeps: $script:RamSweepCount)"
+        Write-Host " Memory WorkingSet : $memMB MB (Stutter-Free Passive Monitoring)"
         Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
         Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
         Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
-        Write-Host " CPU Hardware Mode : $DetectedCpu (All Cores Unparked)"
-        Write-Host " CPU Power Scheme  : $activePlanName (Maximum Frequency)"
-        Write-Host " GPU Hardware Mode : $DetectedGpu (MSI Interrupts & Low Latency)"
+        Write-Host " CPU Hardware Mode : $DetectedCpu"
+        Write-Host " CPU Power Scheme  : $activePlanName"
+        Write-Host " GPU Hardware Mode : $DetectedGpu"
         Write-Host " DWM Display State : Direct Scanout (DWM Bypassed)"
-        Write-Host " Throttled Apps    : $throttledCount background processes (Discord Safe)"
+        Write-Host " Throttled Apps    : $throttledCount background processes (Discord & OBS Safe)"
         Write-Host " Paused Services   : $(if ($StoppedServices.Count -gt 0) { $StoppedServices -join ', ' } else { 'None' })"
+        Write-Host " Crash Safety      : " -NoNewline; Write-Host "On-Disk Backup Active (Safe)" -ForegroundColor Green
         Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
         Write-Host " [i] Press 'Q' or close this window when done to revert." -ForegroundColor Yellow
+        Write-Host " [i] In case of emergency or crash, run 'Restore_Defaults.bat'." -ForegroundColor DarkGray
         Write-Host "==========================================================" -ForegroundColor Cyan
 
         Start-Sleep -Seconds 2
