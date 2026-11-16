@@ -9,7 +9,7 @@
 ![Vanguard Safe](https://img.shields.io/badge/Riot%20Vanguard-100%25%20Safe-success?style=for-the-badge&logo=shield&logoColor=white)
 ![Latency](https://img.shields.io/badge/Timer%20Resolution-0.50ms-blueviolet?style=for-the-badge)
 
-**An automated, pro-grade Windows terminal companion that eliminates frame drops, unlocks true 1:1 mouse input, and locks high-refresh framerates during competitive Valorant matches.** *Engineered for modern gaming laptops & desktops (Intel Core / AMD Ryzen • NVIDIA RTX / AMD Radeon • 144Hz–360Hz+ displays).*
+**An automated, pro-grade Windows terminal companion designed to minimize frame drops, sharpen 1:1 mouse input responsiveness, and stabilize high-refresh framerates during competitive Valorant matches.** *Engineered for modern gaming laptops & desktops (Intel Core / AMD Ryzen • NVIDIA RTX / AMD Radeon • 144Hz–360Hz+ displays).*
 
 ---
 
@@ -60,7 +60,7 @@
 | :--- | :--- | :--- | :--- |
 | **Worst Frame Drops (Executes/Smokes)** | **Drops to 50–70 FPS** ⚠️ | **Holds ~160–185+ FPS** 🟢 | **+200% Higher 1% Lows** |
 | **Average Uncapped Framerate** | ~130 – 200 FPS | **~240 – 320+ FPS** | **+50% Higher Peak FPS** |
-| **Display Sync on High-Refresh Screens** | Screen tearing & drops below refresh | **Locked above native refresh rate** | Zero dropped frames or tearing |
+| **Display Sync on High-Refresh Screens** | Screen tearing & drops below refresh | **Maintains high refresh rate target** | Minimizes dropped frames and tearing |
 | **Click-to-Photon Input Latency** | ~25 ms – 35 ms *(Floaty)* | **~6 ms – 9 ms** *(Esports-grade)* | **~70% Less Input Lag** |
 | **Windows System Timer** | 15.6 ms *(Windows default)* | **0.50 ms** *(Native High-Precision)* | 31x faster thread dispatching |
 | **Desktop Window Manager (DWM)** | 1–2 buffered frames of lag | **0 frames (Direct Scanout)** | Direct GPU scanout to display panel |
@@ -75,12 +75,12 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 
 | # | Optimization | Subsystem | Target / Mechanism | Benefit |
 | :-: | :--- | :--- | :--- | :--- |
-| **1** | **Shader & Crash Cache Purge** | Disk / DirectX | Cleans `DXCache`, `D3DSCache`, `Saved\Logs` | Eliminates shader compilation hitches |
+| **1** | **Shader & Crash Cache Purge** | Disk / DirectX | Cleans `DXCache`, `D3DSCache`, `Saved\Logs` | Prevents stale shader compilation hitches |
 | **2** | **0.50 ms Timer Resolution** | Kernel / Scheduler | `NtSetTimerResolution(5000, true)` via `ntdll.dll` | 31x faster thread dispatch, zero input float |
 | **3** | **CPU Core Unparking** | Power / CPU Cores | `powercfg /setacvalueindex ... CPMINCORES 100` | Prevents core wake micro-stutters during fights |
 | **4** | **Ultimate Performance Plan** | Powercfg / AC State | Activates Ultimate or High Performance GUID | Locks all-core clocks to maximum boost frequency |
 | **5** | **Process Priority: High** | Windows Dispatcher | Sets `$valProc.PriorityClass = High` at runtime | Prioritizes game render threads above OS tasks |
-| **6** | **IFEO CPU Priority** | Registry / IFEO | `CpuPriorityClass = 3` in `Image File Execution Options` | Guarantees instant High priority on launch/reconnect |
+| **6** | **IFEO CPU Priority** | Registry / IFEO | `CpuPriorityClass = 3` in `Image File Execution Options` | Sets instant High priority on launch/reconnect |
 | **7** | **IFEO Disk I/O Priority** | Disk Scheduler | `IoPriority = 3` in `Image File Execution Options` | Prevents asset and audio streaming pop-in |
 | **8** | **IFEO Memory Page Priority** | Memory Manager | `PagePriority = 5` in `Image File Execution Options` | Prevents Windows from paging game RAM to swap |
 | **9** | **DWM Direct Scanout Bypass** | Display / DWM | `DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE` | Bypasses DWM buffer (cuts 1–2 frames / 6–12 ms lag) |
@@ -89,14 +89,14 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 | **12** | **Nagle's Algorithm Disabled** | TCP/IP Stack | `TcpAckFrequency = 1` & `TCPNoDelay = 1` | Instant packet transmission and hit registration |
 | **13** | **Network Throttling Disabled** | Network / MMCSS | `NetworkThrottlingIndex = 0xFFFFFFFF` | Disables Windows network packet throttling |
 | **14** | **100% Gaming CPU Bias** | Multimedia Profile | `SystemResponsiveness = 0` in `SystemProfile` | Allocates 100% of CPU time to the active game |
-| **15** | **Mouse Acceleration Killswitch** | HID / Pointer | `MouseSpeed = 0`, `MouseThreshold1/2 = 0` | Guarantees true 1:1 raw hardware sensor curve |
-| **16** | **Defender Real-Time Exclusions** | Windows Security | `Add-MpPreference -ExclusionProcess` for game & vgc | Eliminates 15–20% CPU spikes from `MsMpEng.exe` |
+| **15** | **Mouse Acceleration Killswitch** | HID / Pointer | `MouseSpeed = 0`, `MouseThreshold1/2 = 0` | Enforces true 1:1 raw hardware sensor curve |
+| **16** | **Defender Real-Time Exclusions** | Windows Security | `Add-MpPreference -ExclusionProcess` for game & vgc | Prevents 15–20% CPU spikes from `MsMpEng.exe` |
 | **17** | **Background App Throttling** | Task Scheduler | Sets background browsers/launchers to `BelowNormal` | Frees CPU headroom without closing your tabs |
 | **18** | **Discord & OBS Protection** | Audio / Video Stream | Explicitly locked at `Normal` priority | Preserves clean voice comms and 60 FPS streams |
 | **19** | **Stutter-Prone Services Paused**| Windows Services | Pauses `WSearch`, `SysMain`, and `DiagTrack` | Halts background indexing and telemetry spikes |
 | **20** | **Standby Memory Clean Pass** | RAM Management | Single `[System.GC]::Collect()` pass prior to launch | Cleans standby RAM without continuous disk thrashing |
 | **21** | **DNS Resolver Flush** | DNS Client | Runs `ipconfig /flushdns` on start and exit | Purges stale routing caches for nearest game servers |
-| **22** | **Crash-Proof State Backup** | System Lifecycle | Snapshot in `optimizer_backup.json` + auto-recovery | 100% safe: auto-reverts on exit, crash, or restore tool |
+| **22** | **Crash Backup & Recovery** | System Lifecycle | Snapshot in `optimizer_backup.json` + auto-recovery | Safe auto-revert on exit, crash, or restore tool |
 
 ---
 
@@ -188,7 +188,7 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 
 22. **🔄 Persistent On-Disk Crash Backup & Auto-Recovery Engine**
     * **Action:** Writes baseline snapshots to `optimizer_backup.json`, hooks `.NET ProcessExit` and PowerShell `finally` blocks, and provides a 1-click `Restore_Defaults.bat`.
-    * **Why it matters:** Ensures 100% of system tweaks revert cleanly upon match completion, after an unexpected crash, or anytime on demand.
+    * **Why it matters:** Allows system tweaks to revert cleanly upon match completion, after an unexpected crash, or anytime on demand.
 
 ---
 
@@ -204,7 +204,7 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 ## ⚙️ Essential Laptop Checklist & Guidelines
 
 > [!WARNING]
-> If your game drops to 60 FPS or stutters on a laptop, ensure these settings are configured:
+> If your game drops to 60 FPS or stutters on a laptop, check these recommended settings:
 
 * **🔌 Always Plug In AC Power:** Gaming laptops reduce GPU power by 50–70% on battery.
 * **🚀 In-Game Video Settings:** Set Display Mode to **Fullscreen**, turn **VSync: OFF**, and set **NVIDIA Reflex / AMD Anti-Lag to On + Boost**.
@@ -228,7 +228,7 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 ## 🛡️ Safety, Anti-Cheat & Emergency Recovery
 
 * **100% Riot Vanguard Safe:** Strictly uses sanctioned Windows OS APIs (`ntdll.dll`, `powercfg`, and registry IFEO). Zero DLL injection, zero game memory hooks, and zero binary modifications.
-* **Crash-Proof Auto-Recovery:** Baseline settings are snapshotted to `optimizer_backup.json`. If power is lost or Windows crashes, settings auto-restore on next launch.
+* **Automated Session Recovery:** Baseline settings are snapshotted to `optimizer_backup.json`. If power is lost or Windows crashes, settings auto-restore on next launch.
 * **1-Click Emergency Restore:** Double-click `Restore_Defaults.bat` anytime (even in Windows Safe Mode) to instantly restore 100% stock factory Windows settings.
 
 ---
@@ -248,6 +248,6 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 
 <div align="center">
 
-**Enjoy smooth frames, crisp headshots, and zero micro-stutters. GG! 🎮**
+**Enjoy smoother frames, crisp responsive input, and stable performance. GG! 🎮**
 
 </div>
