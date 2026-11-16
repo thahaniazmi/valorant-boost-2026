@@ -243,11 +243,21 @@ function Restore-DefenderExclusions {
     }
 }
 
-function Apply-NvidiaMsiAndPowerMizer {
-    # 1. Enable MSI Mode on NVIDIA GPU to eliminate DPC Latency spikes
+# ----------------- HARDWARE DETECTION -----------------
+$DetectedCpu = "Multi-Core CPU"
+$DetectedGpu = "Dedicated GPU"
+try {
+    $cpuObj = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cpuObj -and $cpuObj.Name) { $DetectedCpu = $cpuObj.Name.Trim() }
+    $gpuObj = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "Basic Display" } | Sort-Object AdapterRAM -Descending | Select-Object -First 1
+    if ($gpuObj -and $gpuObj.Name) { $DetectedGpu = $gpuObj.Name.Trim() }
+} catch {}
+
+function Apply-GpuMsiAndPowerProfile {
+    # 1. Enable MSI Mode on GPU (NVIDIA, AMD Radeon, Intel Arc) to eliminate DPC Latency spikes
     try {
         $pciKeys = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\PCI" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.PSChildName -eq "MessageSignaledInterruptProperties" -and $_.PSParentPath -match "VEN_10DE|nvlddmkm" }
+            Where-Object { $_.PSChildName -eq "MessageSignaledInterruptProperties" -and $_.PSParentPath -match "VEN_10DE|VEN_1002|VEN_8086|nvlddmkm|amdkmdag" }
         foreach ($k in $pciKeys) {
             $cur = (Get-ItemProperty -Path $k.PSPath -Name MSISupported -ErrorAction SilentlyContinue).MSISupported
             $script:OriginalMsiSettings[$k.PSPath] = $cur
@@ -255,7 +265,7 @@ function Apply-NvidiaMsiAndPowerMizer {
         }
     } catch {}
 
-    # 2. Prefer Maximum Performance (PowerMizer state 1 on AC)
+    # 2. Prefer Maximum Performance for NVIDIA GPUs (PowerMizer state 1 on AC)
     $classPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
     if (Test-Path $classPath) {
         Get-ChildItem $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match "^\d{4}$" } | ForEach-Object {
@@ -274,7 +284,7 @@ function Apply-NvidiaMsiAndPowerMizer {
     }
 }
 
-function Restore-NvidiaMsiAndPowerMizer {
+function Restore-GpuMsiAndPowerProfile {
     foreach ($path in $script:OriginalMsiSettings.Keys) {
         $orig = $script:OriginalMsiSettings[$path]
         if ($null -ne $orig) {
@@ -435,9 +445,9 @@ function Restore-SystemState {
     Restore-DefenderExclusions
     Write-Host "  -> Windows Defender exclusions removed." -ForegroundColor Cyan
 
-    # 6. Restore NVIDIA MSI & PowerMizer
-    Restore-NvidiaMsiAndPowerMizer
-    Write-Host "  -> NVIDIA MSI mode & PowerMizer restored." -ForegroundColor Cyan
+    # 6. Restore GPU MSI & Power Profile
+    Restore-GpuMsiAndPowerProfile
+    Write-Host "  -> GPU MSI mode & power profile restored." -ForegroundColor Cyan
 
     # 7. Restore IFEO and DWM Bypass
     Restore-IFEOAndDwmBypass
@@ -532,9 +542,9 @@ try {
     $timerStr = Set-HighPrecisionTimer
     Write-Host "  [OK] Timer Resolution       : $timerStr" -ForegroundColor Green
 
-    # C. Power Plan + AMD Ryzen Core Unparking
+    # C. Power Plan + CPU Core Unparking
     $activePlanName = Enable-LowLatencyPower
-    Write-Host "  [OK] Power Plan             : $activePlanName (Ryzen Cores 100% Unparked)" -ForegroundColor Green
+    Write-Host "  [OK] Power Plan             : $activePlanName (All Cores Unparked)" -ForegroundColor Green
 
     # D. IFEO Priority & DWM Bypass
     try {
@@ -558,9 +568,9 @@ try {
     Apply-DefenderExclusions
     Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded (Zero File Hitching)" -ForegroundColor Green
 
-    # H. NVIDIA MSI Mode & PowerMizer
-    Apply-NvidiaMsiAndPowerMizer
-    Write-Host "  [OK] NVIDIA RTX 4050        : MSI Interrupt Mode & Maximum Performance State" -ForegroundColor Green
+    # H. GPU MSI Mode & Hardware Acceleration
+    Apply-GpuMsiAndPowerProfile
+    Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (MSI Interrupts & Low Latency)" -ForegroundColor Green
 
     # I. Background App Throttling (Discord & OBS Protected)
     $throttledCount = 0
@@ -644,8 +654,9 @@ try {
         Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
         Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
         Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
-        Write-Host " CPU Power Scheme  : $activePlanName (Ryzen 100% Unparked)"
-        Write-Host " GPU Hardware Mode : RTX 4050 MSI Interrupts & Max Performance"
+        Write-Host " CPU Hardware Mode : $DetectedCpu (All Cores Unparked)"
+        Write-Host " CPU Power Scheme  : $activePlanName (Maximum Frequency)"
+        Write-Host " GPU Hardware Mode : $DetectedGpu (MSI Interrupts & Low Latency)"
         Write-Host " DWM Display State : True Exclusive Fullscreen (Direct Scanout)"
         Write-Host " Throttled Apps    : $throttledCount background processes (Discord Safe)"
         Write-Host " Paused Services   : $(if ($StoppedServices.Count -gt 0) { $StoppedServices -join ', ' } else { 'None' })"

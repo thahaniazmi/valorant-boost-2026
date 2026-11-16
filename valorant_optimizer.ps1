@@ -227,10 +227,20 @@ function Restore-DefenderExclusions {
     }
 }
 
-function Apply-NvidiaMsiAndPowerMizer {
+# ----------------- HARDWARE DETECTION -----------------
+$DetectedCpu = "Multi-Core CPU"
+$DetectedGpu = "Dedicated GPU"
+try {
+    $cpuObj = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cpuObj -and $cpuObj.Name) { $DetectedCpu = $cpuObj.Name.Trim() }
+    $gpuObj = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "Basic Display" } | Sort-Object AdapterRAM -Descending | Select-Object -First 1
+    if ($gpuObj -and $gpuObj.Name) { $DetectedGpu = $gpuObj.Name.Trim() }
+} catch {}
+
+function Apply-GpuMsiAndPowerProfile {
     try {
         $pciKeys = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\PCI" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.PSChildName -eq "MessageSignaledInterruptProperties" -and $_.PSParentPath -match "VEN_10DE|nvlddmkm" }
+            Where-Object { $_.PSChildName -eq "MessageSignaledInterruptProperties" -and $_.PSParentPath -match "VEN_10DE|VEN_1002|VEN_8086|nvlddmkm|amdkmdag" }
         foreach ($k in $pciKeys) {
             $cur = (Get-ItemProperty -Path $k.PSPath -Name MSISupported -ErrorAction SilentlyContinue).MSISupported
             $script:OriginalMsiSettings[$k.PSPath] = $cur
@@ -256,7 +266,7 @@ function Apply-NvidiaMsiAndPowerMizer {
     }
 }
 
-function Restore-NvidiaMsiAndPowerMizer {
+function Restore-GpuMsiAndPowerProfile {
     foreach ($path in $script:OriginalMsiSettings.Keys) {
         $orig = $script:OriginalMsiSettings[$path]
         if ($null -ne $orig) {
@@ -379,8 +389,8 @@ function Restore-SystemState {
     Restore-DefenderExclusions
     Write-Host "  -> Windows Defender exclusions removed." -ForegroundColor Cyan
 
-    Restore-NvidiaMsiAndPowerMizer
-    Write-Host "  -> NVIDIA MSI mode & PowerMizer restored." -ForegroundColor Cyan
+    Restore-GpuMsiAndPowerProfile
+    Write-Host "  -> GPU MSI mode & power profile restored." -ForegroundColor Cyan
 
     Restore-IFEOAndDwmBypass
     Write-Host "  -> IFEO priority & Fullscreen flags restored." -ForegroundColor Cyan
@@ -482,8 +492,8 @@ try {
     Apply-DefenderExclusions
     Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded (Zero File Hitching)" -ForegroundColor Green
 
-    Apply-NvidiaMsiAndPowerMizer
-    Write-Host "  [OK] NVIDIA RTX 4050        : MSI Interrupt Mode & Maximum Performance State" -ForegroundColor Green
+    Apply-GpuMsiAndPowerProfile
+    Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (MSI Interrupts & Low Latency)" -ForegroundColor Green
 
     $throttledCount = 0
     foreach ($name in $BackgroundHogs) {
@@ -561,8 +571,9 @@ try {
         Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
         Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
         Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
-        Write-Host " CPU Power Scheme  : $activePlanName (Ryzen 100% Unparked)"
-        Write-Host " GPU Hardware Mode : RTX 4050 MSI Interrupts & Max Performance"
+        Write-Host " CPU Hardware Mode : $DetectedCpu (All Cores Unparked)"
+        Write-Host " CPU Power Scheme  : $activePlanName (Maximum Frequency)"
+        Write-Host " GPU Hardware Mode : $DetectedGpu (MSI Interrupts & Low Latency)"
         Write-Host " DWM Display State : Direct Scanout (DWM Bypassed)"
         Write-Host " Throttled Apps    : $throttledCount background processes (Discord Safe)"
         Write-Host " Paused Services   : $(if ($StoppedServices.Count -gt 0) { $StoppedServices -join ', ' } else { 'None' })"
