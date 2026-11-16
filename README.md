@@ -28,26 +28,29 @@
  └────────────────────────────────────────────────────────────────────────┘
           │
           ▼
- [1] Launch Valorant_Optimizer.bat
+ [1] Launch via System Tray (Install_AutoStart_Tray.bat) or Console HUD
           │  Purges stale DirectX & NVIDIA DXCache
-          │  Audits GameUserSettings (Multi-Threaded Rendering + Raw Input)
+          │  Cleans standby RAM and validates system baseline
           ▼
- [2] Standby Mode (0% CPU Overhead)
-          │  Waits for you to open Valorant
+ [2] Standby Mode (0.00% CPU Overhead)
+          │  Quietly waits in system tray or console for Valorant
           ▼
- [3] Valorant Opens ──► AUTO-ENGAGE ULTIMATE PRO TWEAKS:
+ [3] Valorant Opens ──► AUTO-ENGAGE 26 PRO KERNEL & HARDWARE TWEAKS:
           │  ├─► Timer Resolution : 0.50 ms (Native ntdll.dll API)
+          │  ├─► Core 0 Isolation : Mouse & NIC DPCs isolated from game render loop
+          │  ├─► Deep Freeze      : Background apps suspended from kernel run-queue
+          │  ├─► EcoQoS Steering  : Background banished to E-cores (P-cores 100% game)
+          │  ├─► Memory Priority  : Game Level 5 Page Lock / Background RAM demoted
           │  ├─► CPU Cores        : 100% Unparked on AC (Intel / AMD CPMINCORES 100)
           │  ├─► GPU Performance  : P-State & Clock State Locked (Zero Stutters)
           │  ├─► Display Buffer   : DWM Compositor Bypassed (Direct Hardware Scanout)
           │  ├─► Process Priority : HIGH CPU & High Disk I/O (IFEO Injected)
           │  ├─► Network Stack    : Nagle's Algorithm Disabled (Immediate TCP Packets)
-          │  ├─► Memory Standby   : Pre-match Clean Pass (Zero In-Game Hitching)
           │  ├─► Antivirus        : Real-time Defender Exclusions Active
-          │  └─► Live HUD         : Displays session timer, RAM, ping, active tweaks
+          │  └─► Live HUD / Tray  : Displays session timer, RAM, ping, active tweaks
           ▼
  [4] Valorant Closes ──► AUTO-REVERT EVERYTHING:
-             Restores default timer, power scheme, registry keys, and services.
+             Restores default timer, power scheme, process queues, and services.
 ```
 
 ---
