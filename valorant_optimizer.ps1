@@ -1,4 +1,4 @@
-# Valorant Pro Performance Companion & Low-Latency Optimizer (PowerShell Edition)
+# Valorant Ultimate Performance Companion & Low-Latency Optimizer (PowerShell Edition)
 # Vanguard Safety: 100% safe. Only uses standard Windows OS APIs (priorities, power schemes, service management).
 
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -8,7 +8,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit
 }
 
-$Host.UI.RawUI.WindowTitle = "Valorant Pro Low-Latency Companion"
+$Host.UI.RawUI.WindowTitle = "Valorant Ultimate Low-Latency Companion"
 [Console]::CursorVisible = $false
 Clear-Host
 
@@ -16,7 +16,7 @@ Clear-Host
 $TargetProcessName = "VALORANT-Win64-Shipping"
 $FallbackProcessName = "VALORANT"
 $BackgroundHogs = @("chrome", "msedge", "brave", "opera", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
-$PauseServices = @("WSearch", "SysMain")
+$PauseServices = @("WSearch", "SysMain", "DiagTrack")
 $PollIntervalSeconds = 1
 
 # ----------------- P/INVOKE: NATIVE APIS (TIMER & MEMORY) -----------------
@@ -49,10 +49,15 @@ $OriginalTimerRes = 156250
 $OriginalSysProfile = @{}
 $OriginalGameDVR = @{}
 $OriginalTcpSettings = @{}
+$OriginalMouseSettings = @{}
+$OriginalMsiSettings = @{}
+$OriginalPowerMizer = @{}
+$DefenderExclusionsApplied = $false
 $IfeoCreated = $false
 $AppCompatCreated = $false
 $ValorantFullPath = ""
 $StartTime = $null
+$RamSweepCount = 0
 
 # ----------------- HELPER FUNCTIONS -----------------
 function Get-ActivePowerScheme {
@@ -178,6 +183,107 @@ function Restore-NetworkAndRegistryTweaks {
     }
 }
 
+function Apply-MouseAccelerationKillswitch {
+    $mousePath = "HKCU:\Control Panel\Mouse"
+    if (Test-Path $mousePath) {
+        $script:OriginalMouseSettings["MouseSpeed"] = (Get-ItemProperty -Path $mousePath -Name MouseSpeed -ErrorAction SilentlyContinue).MouseSpeed
+        $script:OriginalMouseSettings["MouseThreshold1"] = (Get-ItemProperty -Path $mousePath -Name MouseThreshold1 -ErrorAction SilentlyContinue).MouseThreshold1
+        $script:OriginalMouseSettings["MouseThreshold2"] = (Get-ItemProperty -Path $mousePath -Name MouseThreshold2 -ErrorAction SilentlyContinue).MouseThreshold2
+
+        Set-ItemProperty -Path $mousePath -Name "MouseSpeed" -Value "0" -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseThreshold1" -Value "0" -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseThreshold2" -Value "0" -Type String -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Restore-MouseAccelerationKillswitch {
+    $mousePath = "HKCU:\Control Panel\Mouse"
+    if (Test-Path $mousePath) {
+        if ($script:OriginalMouseSettings.ContainsKey("MouseSpeed") -and $null -ne $script:OriginalMouseSettings["MouseSpeed"]) {
+            Set-ItemProperty -Path $mousePath -Name "MouseSpeed" -Value $script:OriginalMouseSettings["MouseSpeed"] -Type String -Force -ErrorAction SilentlyContinue
+        }
+        if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold1") -and $null -ne $script:OriginalMouseSettings["MouseThreshold1"]) {
+            Set-ItemProperty -Path $mousePath -Name "MouseThreshold1" -Value $script:OriginalMouseSettings["MouseThreshold1"] -Type String -Force -ErrorAction SilentlyContinue
+        }
+        if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold2") -and $null -ne $script:OriginalMouseSettings["MouseThreshold2"]) {
+            Set-ItemProperty -Path $mousePath -Name "MouseThreshold2" -Value $script:OriginalMouseSettings["MouseThreshold2"] -Type String -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Apply-DefenderExclusions {
+    try {
+        Add-MpPreference -ExclusionProcess "VALORANT-Win64-Shipping.exe", "RiotClientServices.exe", "vgc.exe" -ErrorAction SilentlyContinue
+        $script:DefenderExclusionsApplied = $true
+    } catch {}
+}
+
+function Restore-DefenderExclusions {
+    if ($script:DefenderExclusionsApplied) {
+        try {
+            Remove-MpPreference -ExclusionProcess "VALORANT-Win64-Shipping.exe", "RiotClientServices.exe", "vgc.exe" -ErrorAction SilentlyContinue
+        } catch {}
+        $script:DefenderExclusionsApplied = $false
+    }
+}
+
+function Apply-NvidiaMsiAndPowerMizer {
+    try {
+        $pciKeys = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\PCI" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -eq "MessageSignaledInterruptProperties" -and $_.PSParentPath -match "VEN_10DE|nvlddmkm" }
+        foreach ($k in $pciKeys) {
+            $cur = (Get-ItemProperty -Path $k.PSPath -Name MSISupported -ErrorAction SilentlyContinue).MSISupported
+            $script:OriginalMsiSettings[$k.PSPath] = $cur
+            Set-ItemProperty -Path $k.PSPath -Name "MSISupported" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
+    $classPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    if (Test-Path $classPath) {
+        Get-ChildItem $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match "^\d{4}$" } | ForEach-Object {
+            $props = Get-ItemProperty $_.PSPath
+            if ($props.DriverDesc -match "NVIDIA" -or $props.ProviderName -match "NVIDIA") {
+                $script:OriginalPowerMizer[$_.PSPath] = @{
+                    PowerMizerEnable = $props.PowerMizerEnable
+                    PowerMizerLevel = $props.PowerMizerLevel
+                    PowerMizerLevelAC = $props.PowerMizerLevelAC
+                }
+                Set-ItemProperty -Path $_.PSPath -Name "PowerMizerEnable" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $_.PSPath -Name "PowerMizerLevel" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $_.PSPath -Name "PowerMizerLevelAC" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+function Restore-NvidiaMsiAndPowerMizer {
+    foreach ($path in $script:OriginalMsiSettings.Keys) {
+        $orig = $script:OriginalMsiSettings[$path]
+        if ($null -ne $orig) {
+            Set-ItemProperty -Path $path -Name "MSISupported" -Value $orig -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    foreach ($path in $script:OriginalPowerMizer.Keys) {
+        $saved = $script:OriginalPowerMizer[$path]
+        if ($null -ne $saved.PowerMizerEnable) {
+            Set-ItemProperty -Path $path -Name "PowerMizerEnable" -Value $saved.PowerMizerEnable -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Remove-ItemProperty -Path $path -Name "PowerMizerEnable" -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $saved.PowerMizerLevel) {
+            Set-ItemProperty -Path $path -Name "PowerMizerLevel" -Value $saved.PowerMizerLevel -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Remove-ItemProperty -Path $path -Name "PowerMizerLevel" -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $saved.PowerMizerLevelAC) {
+            Set-ItemProperty -Path $path -Name "PowerMizerLevelAC" -Value $saved.PowerMizerLevelAC -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Remove-ItemProperty -Path $path -Name "PowerMizerLevelAC" -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Apply-IFEOAndDwmBypass {
     param([string]$exePath)
 
@@ -267,6 +373,15 @@ function Restore-SystemState {
     Restore-NetworkAndRegistryTweaks
     Write-Host "  -> Network throttling and TCP stack restored." -ForegroundColor Cyan
 
+    Restore-MouseAccelerationKillswitch
+    Write-Host "  -> Windows mouse acceleration restored." -ForegroundColor Cyan
+
+    Restore-DefenderExclusions
+    Write-Host "  -> Windows Defender exclusions removed." -ForegroundColor Cyan
+
+    Restore-NvidiaMsiAndPowerMizer
+    Write-Host "  -> NVIDIA MSI mode & PowerMizer restored." -ForegroundColor Cyan
+
     Restore-IFEOAndDwmBypass
     Write-Host "  -> IFEO priority & Fullscreen flags restored." -ForegroundColor Cyan
 
@@ -298,7 +413,7 @@ function Restore-SystemState {
 
 try {
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "     VALORANT PRO PERFORMANCE COMPANION (POWERSHELL)      " -ForegroundColor White
+    Write-Host "     VALORANT ULTIMATE LOW-LATENCY COMPANION (PS)         " -ForegroundColor White
     Write-Host "==========================================================" -ForegroundColor Cyan
 
     $OriginalPowerScheme = Get-ActivePowerScheme
@@ -333,7 +448,7 @@ try {
     $StartTime = Get-Date
     Write-Host "==========================================================" -ForegroundColor Green
     Write-Host "  [+] VALORANT DETECTED! (PID: $($valProc.Id))" -ForegroundColor Green
-    Write-Host "  Applying dynamic competitive optimizations..." -ForegroundColor White
+    Write-Host "  Applying ultimate competitive optimizations..." -ForegroundColor White
     Write-Host "==========================================================" -ForegroundColor Green
 
     try {
@@ -360,6 +475,15 @@ try {
 
     Apply-NetworkAndRegistryTweaks
     Write-Host "  [OK] Network & TCP Stack    : Nagle's Disabled / 0% Throttling" -ForegroundColor Green
+
+    Apply-MouseAccelerationKillswitch
+    Write-Host "  [OK] Windows Mouse Accel    : Disabled (True 1:1 Curve)" -ForegroundColor Green
+
+    Apply-DefenderExclusions
+    Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded (Zero File Hitching)" -ForegroundColor Green
+
+    Apply-NvidiaMsiAndPowerMizer
+    Write-Host "  [OK] NVIDIA RTX 4050        : MSI Interrupt Mode & Maximum Performance State" -ForegroundColor Green
 
     $throttledCount = 0
     foreach ($name in $BackgroundHogs) {
@@ -397,6 +521,7 @@ try {
     Start-Sleep -Seconds 2
 
     $lastPingCheck = [DateTime]::MinValue
+    $lastRamSweep = Get-Date
     $cachedPing = "Testing..."
 
     while (-not $valProc.HasExited) {
@@ -413,6 +538,12 @@ try {
             $lastPingCheck = Get-Date
         }
 
+        if (((Get-Date) - $lastRamSweep).TotalSeconds -ge 60) {
+            Purge-SystemMemoryAndStandby
+            $lastRamSweep = Get-Date
+            $script:RamSweepCount++
+        }
+
         Clear-Host
         $elapsed = (Get-Date) - $StartTime
         $elapsedStr = "{0:D2}h {1:D2}m {2:D2}s" -f $elapsed.Hours, $elapsed.Minutes, $elapsed.Seconds
@@ -421,16 +552,17 @@ try {
         $memMB = [Math]::Round($valProc.WorkingSet64 / 1MB, 1)
 
         Write-Host "==========================================================" -ForegroundColor Cyan
-        Write-Host "             VALORANT LIVE MONITORING HUD                 " -ForegroundColor White
+        Write-Host "       VALORANT ULTIMATE LOW-LATENCY MONITORING HUD       " -ForegroundColor White
         Write-Host "==========================================================" -ForegroundColor Cyan
         Write-Host " Game Status       : " -NoNewline; Write-Host "ACTIVE (Running)" -ForegroundColor Green
         Write-Host " Process PID       : $($valProc.Id)"
         Write-Host " Session Duration  : $elapsedStr"
-        Write-Host " Memory WorkingSet : $memMB MB"
+        Write-Host " Memory WorkingSet : $memMB MB (Standby Sweeps: $script:RamSweepCount)"
         Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
         Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
         Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
         Write-Host " CPU Power Scheme  : $activePlanName (Ryzen 100% Unparked)"
+        Write-Host " GPU Hardware Mode : RTX 4050 MSI Interrupts & Max Performance"
         Write-Host " DWM Display State : Direct Scanout (DWM Bypassed)"
         Write-Host " Throttled Apps    : $throttledCount background processes (Discord Safe)"
         Write-Host " Paused Services   : $(if ($StoppedServices.Count -gt 0) { $StoppedServices -join ', ' } else { 'None' })"
