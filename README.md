@@ -9,9 +9,7 @@
 ![Vanguard Safe](https://img.shields.io/badge/Riot%20Vanguard-100%25%20Safe-success?style=for-the-badge&logo=shield&logoColor=white)
 ![Latency](https://img.shields.io/badge/Timer%20Resolution-0.50ms-blueviolet?style=for-the-badge)
 
-**An automated, pro-grade Windows terminal companion that eliminates frame drops, unlocks true 1:1 mouse input, and locks high-refresh framerates during competitive Valorant matches.**
-
-*Engineered for modern gaming laptops & desktops (Intel Core / AMD Ryzen • NVIDIA RTX / AMD Radeon • 144Hz–360Hz+ displays).*
+**An automated, pro-grade Windows terminal companion that eliminates frame drops, unlocks true 1:1 mouse input, and locks high-refresh framerates during competitive Valorant matches.** *Engineered for modern gaming laptops & desktops (Intel Core / AMD Ryzen • NVIDIA RTX / AMD Radeon • 144Hz–360Hz+ displays).*
 
 ---
 
