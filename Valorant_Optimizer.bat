@@ -16,7 +16,7 @@ exit /b
 
 # =========================================================================
 # VALORANT ULTIMATE COMPETITIVE PERFORMANCE COMPANION
-# Tailored for AMD Ryzen + NVIDIA RTX 40-Series + 170Hz+ Esports Gaming
+# Tailored for Windows Esports Gaming (Intel & AMD • NVIDIA & Radeon • 144Hz–360Hz+)
 # Vanguard Safe: 100% compliant with Riot Vanguard anti-cheat.
 # =========================================================================
 
