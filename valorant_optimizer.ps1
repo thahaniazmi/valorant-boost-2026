@@ -1,4 +1,4 @@
-﻿# Valorant Ultimate Performance Companion & Low-Latency Optimizer (PowerShell Edition)
+﻿# Valorant Low-Latency Companion & Optimizer (PowerShell Edition)
 # Vanguard Safety: 100% safe. Only uses documented standard Windows OS APIs (priorities, power schemes, service management).
 # Crash Safety: Includes persistent on-disk state backup and auto-recovery to prevent stuck registry keys.
 # System Tray: Supports zero-overhead background tray monitoring, live HUD toggle, and auto-start.
@@ -25,7 +25,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     exit
 }
 
-$Host.UI.RawUI.WindowTitle = "Valorant Ultimate Low-Latency Companion"
+$Host.UI.RawUI.WindowTitle = "Valorant Low-Latency Companion"
 try { [Console]::CursorVisible = $false } catch {}
 
 # ----------------- SINGLE INSTANCE CHECK -----------------
@@ -790,7 +790,7 @@ function Restore-SystemState {
     if ($script:HudVisible) {
         Write-Host "`n"
         Write-Host "==========================================================" -ForegroundColor DarkGray
-        Write-Host "       REVERTING VALORANT PRO OPTIMIZATIONS (SAFE)        " -ForegroundColor Yellow
+        Write-Host "             REVERTING OPTIMIZATIONS (SAFE)               " -ForegroundColor Yellow
         Write-Host "==========================================================" -ForegroundColor DarkGray
     }
 
@@ -916,7 +916,7 @@ try {
         if ($script:HudVisible) {
             Clear-Host
             Write-Host "==========================================================" -ForegroundColor Cyan
-            Write-Host "      VALORANT PRO LOW-LATENCY COMPANION & OPTIMIZER      " -ForegroundColor White
+            Write-Host "        VALORANT LOW-LATENCY COMPANION                    " -ForegroundColor White
             Write-Host "==========================================================" -ForegroundColor Cyan
             Write-Host " Status   : " -NoNewline; Write-Host "STANDBY (Waiting for Valorant to launch)" -ForegroundColor Yellow
             Write-Host " Overhead : 0.00% CPU Polling | Riot Vanguard Safe: 100%" -ForegroundColor DarkGray
@@ -924,10 +924,10 @@ try {
             Write-Host " [HOW TO USE]" -ForegroundColor White
             Write-Host "  1. Keep this window running (or press 'T' to send to Tray)." -ForegroundColor Gray
             Write-Host "  2. Start Valorant normally whenever you are ready." -ForegroundColor Gray
-            Write-Host "  3. All 26 pro kernel & scheduling tweaks engage instantly." -ForegroundColor Gray
+            Write-Host "  3. Tweaks engage automatically in the background." -ForegroundColor Gray
             Write-Host "  4. When you quit the match, all settings auto-revert cleanly." -ForegroundColor Gray
             Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
-            Write-Host " [PRIMED KERNEL & HARDWARE OPTIMIZATION PROFILE]" -ForegroundColor White
+            Write-Host " [ACTIVE TWEAKS]" -ForegroundColor White
             Write-Host "  * Kernel / Dispatcher : 0.50ms Timer | Core 0 DPC Isolation | Deep Freeze" -ForegroundColor Cyan
             Write-Host "  * Cores / Scheduling  : 100% Unparked | EcoQoS E-Core Steering | High IFEO" -ForegroundColor Cyan
             Write-Host "  * GPU / Screen Buffer : Direct Scanout (DWM Bypass) | PowerMizer Locked" -ForegroundColor Cyan
@@ -975,7 +975,7 @@ try {
             Clear-Host
             Write-Host "==========================================================" -ForegroundColor Green
             Write-Host "  [+] VALORANT DETECTED! (PID: $valPid)" -ForegroundColor Green
-            Write-Host "  Applying pro-grade low-latency kernel optimizations..." -ForegroundColor White
+            Write-Host "  Applying low-latency tweaks..." -ForegroundColor White
             Write-Host "==========================================================" -ForegroundColor Green
         }
 
@@ -1167,18 +1167,18 @@ try {
             if ($script:HudVisible) {
                 Clear-Host
                 Write-Host "==========================================================" -ForegroundColor Cyan
-                Write-Host "       VALORANT ULTIMATE LOW-LATENCY MONITORING HUD       " -ForegroundColor White
+                Write-Host "          VALORANT LOW-LATENCY MONITORING HUD         " -ForegroundColor White
                 Write-Host "==========================================================" -ForegroundColor Cyan
                 Write-Host " Game Status       : " -NoNewline; Write-Host "ACTIVE (Running)" -ForegroundColor Green
                 Write-Host " Process PID       : $valPid"
                 Write-Host " Session Duration  : $elapsedStr"
-                Write-Host " Memory WorkingSet : $memMB MB (Stutter-Free Passive Monitoring)"
+                Write-Host " Memory WorkingSet : $memMB MB (Passive Monitoring)"
                 Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
                 Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
                 Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Native ntdll.dll)" -ForegroundColor Green
                 Write-Host " Core 0 Isolation  : " -NoNewline; Write-Host "$(if ($script:AffinityModified) { 'ACTIVE (Core 0 DPCs & Interrupts Isolated)' } else { 'Standard All-Core' })" -ForegroundColor Green
                 Write-Host " Deep Freeze Apps  : " -NoNewline; Write-Host "$($script:DeepFreezeCount) background processes suspended from run-queue" -ForegroundColor Green
-                Write-Host " EcoQoS Steering   : " -NoNewline; Write-Host "$($script:EcoQoSSuccessCount) processes banished to E-Cores (P-Cores 100% Game)" -ForegroundColor Green
+                Write-Host " EcoQoS Steering   : " -NoNewline; Write-Host "$($script:EcoQoSSuccessCount) processes moved to E-Cores" -ForegroundColor Green
                 Write-Host " Memory Priority   : " -NoNewline; Write-Host "Game Level 5 | Background Level 1 VeryLow" -ForegroundColor Green
                 Write-Host " CPU Hardware Mode : $DetectedCpu"
                 Write-Host " CPU Power Scheme  : $activePlanName"
@@ -1198,7 +1198,7 @@ try {
         Restore-SystemState
 
         if ($script:Running) {
-            Show-TrayNotification -Title "🔄 Valorant Session Ended" -Text "All 26 optimizations reverted safely. Companion back to tray standby."
+            Show-TrayNotification -Title "🔄 Valorant Session Ended" -Text "Settings reverted safely. Back to standby."
 
             # If user ran one-off in console mode (not -Tray and didn't minimize to tray), exit as usual
             if (-not $script:InTrayMode -and $script:HudVisible) {

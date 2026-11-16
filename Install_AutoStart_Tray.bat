@@ -49,8 +49,8 @@ if %errorlevel% equ 0 (
 echo.
 echo Launching companion in the system tray for this session...
 start "" "%TARGET_BAT%"
-echo  [+] Active now: Look for the sparkly Valorant icon in your system tray!
-echo  [+] Persistent: It will now auto-start every time Windows boots.
+echo  [+] Active now: Look for the Valorant icon in your system tray.
+echo  [+] Configured to auto-start on Windows login.
 echo.
 echo Setup is complete! Press any key to exit...
 pause >nul
