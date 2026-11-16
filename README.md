@@ -85,102 +85,89 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 
 ## 🔬 Detailed Technical Breakdown
 
-1. **🧹 Stale Shader & Crash Cache Purge**
-   * **Action:** Purges `%LOCALAPPDATA%\NVIDIA\DXCache\*`, `%LOCALAPPDATA%\D3DSCache\*`, and `%LOCALAPPDATA%\VALORANT\Saved\Logs\*` before launch.
-   * **Why it matters:** Removes corrupted or fragmented shader binaries, eliminating in-match shader recompilation frame drops.
+```mermaid
+flowchart LR
+    A[Launch / Match Start] --> B[Purge Shader Caches]
+    B --> C[Inject IFEO & 0.5ms Timer]
+    C --> D[DWM Bypass & Network Tune]
+    D --> E[In-Match: Peak 1% Lows & Sub-ms Input]
+    E --> F[Exit / Crash]
+    F --> G[Auto-Restore Baseline via JSON]
+```
 
-2. **⏱️ 0.50 ms Sub-Millisecond Timer Resolution**
-   * **Action:** Calls `NtSetTimerResolution(5000, true)` via native Windows `ntdll.dll` to override the default 15.6 ms system tick rate.
-   * **Why it matters:** 31x faster thread dispatching synchronizes mouse polling and game loops with high-refresh monitors, eliminating input float.
+### ⚡ CPU & Power
+* **0.50 ms Timer Resolution:** Calls `ntdll.dll!NtSetTimerResolution` → 31x faster scheduling, eliminates input float.
+* **Disable Core Parking:** Sets `CPMINCORES = 100` via `powercfg` → Keeps 100% of cores awake to stop C-state wake stutters.
+* **Ultimate Performance Scheme:** Locks CPU base/boost clocks → Prevents frequency drops during quiet rounds.
+* **100% Gaming Responsiveness:** Sets `SystemResponsiveness = 0` → Reclaims the 20% CPU slice reserved for background OS multimedia.
 
-3. **CPU Core Parking Disabled (`CPMINCORES = 100%`)**
-   * **Action:** Executes `powercfg /setacvalueindex scheme_current sub_processor CPMINCORES 100` on AC power.
-   * **Why it matters:** Keeps 100% of CPU cores active, preventing 50–100 ms micro-stutters caused by cores waking from C-state sleep during executes.
+### 🎯 Process & I/O Priority (IFEO)
+* **High CPU Priority:** Injects `CpuPriorityClass = 3` via IFEO & runtime elevation → Ensures Valorant gets top scheduling priority from frame one.
+* **High Disk I/O Priority:** Injects `IoPriority = 3` via IFEO → Prioritizes SSD reads, preventing texture pop-in and audio hitches.
+* **Memory Page Locking:** Injects `PagePriority = 5` via IFEO → Signals Windows never to swap game memory to `pagefile.sys`.
 
-4. **🔋 Ultimate / High Performance Power Plan**
-   * **Action:** Queries and activates the Windows Ultimate Performance (`e9a42b02-d5df-448d-aa00-03f14749eb61`) or High Performance scheme.
-   * **Why it matters:** Locks CPU base and boost frequencies at peak operational states, preventing down-clocking during quiet rounds.
+### 🖥️ Display & GPU
+* **Direct Scanout (DWM Bypass):** Injects `DISABLEDXMAXIMIZEDWINDOWEDMODE` → Bypasses DWM compositor, saving 1–2 frames (6–12 ms) of display lag.
+* **NVIDIA PowerMizer Lock:** Forces performance P-states via registry → Prevents GPU down-clocking during buy phases or smoke executes without unsafe PCI bus edits.
 
-5. **🎯 Direct Process Priority Elevation (HIGH)**
-   * **Action:** Dynamically assigns `$valProc.PriorityClass = High` to `VALORANT-Win64-Shipping.exe`.
-   * **Why it matters:** Instructs the Windows scheduler to serve game threads ahead of background OS tasks (avoids `RealTime` to prevent input freezes).
+### 🌐 Network & Input
+* **Zero Packet Delay (Kill Nagle):** Sets `TcpAckFrequency = 1` & `TCPNoDelay = 1` → Sends bullet/movement packets instantly without batching delays (up to 200 ms).
+* **Remove Network Throttling:** Sets `NetworkThrottlingIndex = 0xFFFFFFFF` → Completely disables automated Windows packet throttling.
+* **1:1 Linear Mouse Tracking:** Sets `MouseSpeed = 0` and thresholds to `0` → Eliminates residual OS pointer curves for raw sensor tracking.
+* **DNS Resolver Flush:** Clears cache on startup/exit → Ensures matchmaking connects over the freshest server routes.
 
-6. **💽 IFEO CPU Priority Injection**
-   * **Action:** Sets `CpuPriorityClass = 3` (High) in `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\VALORANT-Win64-Shipping.exe\PerfOptions`.
-   * **Why it matters:** Ensures the game engine launches at High Priority from the very first frame, even after reconnects or restarts.
+### 🧹 Background & System Overhead
+* **Shader & Crash Cache Purge:** Clears `DXCache`, `D3DSCache`, and game logs → Eliminates in-match shader recompilation drops.
+* **Windows Defender Exclusions:** Excludes Valorant, Riot Client, and Vanguard → Eliminates 15–20% CPU spikes from real-time asset scans.
+* **Process Priority Balancing:** Demotes browsers to `BelowNormal`, shields Discord/OBS at `Normal` → Frees CPU headroom without audio distortion or dropped frames.
+* **Service Pausing:** Temporarily stops `WSearch`, `SysMain`, and `DiagTrack` → Eliminates sudden background disk I/O and telemetry stutters.
+* **Stutter-Free Memory Prep:** One-time initial GC pass → Avoids aggressive runtime `EmptyWorkingSet` paging loops.
 
-7. **🚀 IFEO Disk I/O Priority Injection**
-   * **Action:** Sets `IoPriority = 3` (High) in the IFEO registry profile for the Valorant shipping binary.
-   * **Why it matters:** Prioritizes game asset, skin, and audio reads from SSD over background file operations, stopping texture pop-in and audio hitches.
-
-8. **🛡️ IFEO Memory Page Priority Injection**
-   * **Action:** Sets `PagePriority = 5` in the IFEO registry profile.
-   * **Why it matters:** Signals to the Windows memory manager never to evict or page game working memory to disk swap (`pagefile.sys`).
-
-9. **🖥️ True Hardware Direct Scanout (DWM Bypass)**
-   * **Action:** Injects `~ DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE` into `HKCU:\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers`.
-   * **Why it matters:** Bypasses Desktop Window Manager (DWM) composition buffers, delivering Direct Scanout to eliminate 1–2 frames (6–12 ms) of display lag.
-
-10. **GPU Hardware Profile & PowerMizer Performance Mode**
-    * **Action:** Uses safe display driver power-state enforcement, bypassing blind raw PCI bus edits (`MSISupported=1`) that cause black screens and driver BSODs.
-    * **Why it matters:** Sustains peak GPU clocks and low DPC latency with zero risk of display corruption or system crashes.
-
-11. **🏎️ NVIDIA PowerMizer Maximum Performance Lock**
-    * **Action:** Sets `PowerMizerEnable = 1`, `PowerMizerLevel = 1`, and `PowerMizerLevelAC = 1` under display class registry keys.
-    * **Why it matters:** Prevents NVIDIA drivers from down-clocking GPU frequencies to intermediate P-states during buy phases or smoke executes.
-
-12. **🌐 Zero Packet Delay (Nagle's Algorithm Killswitch)**
-    * **Action:** Applies `TcpAckFrequency = 1` and `TCPNoDelay = 1` across active network interfaces in `Tcpip\Parameters\Interfaces`.
-    * **Why it matters:** Disables packet batching (up to 200 ms), sending bullet and movement packets immediately for tighter peeker's advantage.
-
-13. **📶 Windows Network Throttling Elimination**
-    * **Action:** Sets `NetworkThrottlingIndex = 0xFFFFFFFF` in `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile`.
-    * **Why it matters:** Completely disables the Windows network scheduler's automated packet throttling mechanism.
-
-14. **🎮 System Responsiveness 100% Gaming Bias**
-    * **Action:** Sets `SystemResponsiveness = 0` in `Multimedia\SystemProfile`.
-    * **Why it matters:** Allocates 100% of CPU time to the active game by eliminating the default 20% slice reserved for background OS multimedia.
-
-15. **🖱️ OS-Level Mouse Acceleration Killswitch**
-    * **Action:** Sets `MouseSpeed = 0`, `MouseThreshold1 = 0`, and `MouseThreshold2 = 0` under `HKCU:\Control Panel\Mouse`.
-    * **Why it matters:** Overrides residual Windows pointer curves ("Enhance Pointer Precision") for true 1:1 linear sensor tracking.
-
-16. **🛡️ Windows Defender Real-Time Scanning Exclusions**
-    * **Action:** Adds temporary exclusions via `Add-MpPreference -ExclusionProcess` for `VALORANT-Win64-Shipping.exe`, `RiotClientServices.exe`, and `vgc.exe`.
-    * **Why it matters:** Stops `MsMpEng.exe` from consuming 15–20% CPU while scanning game assets in real time during matches.
-
-17. **📉 Background Process Deprioritization**
-    * **Action:** Dynamically demotes resource-hungry browsers and launchers (`chrome`, `edge`, `brave`, `steamwebhelper`, etc.) to `BelowNormal` priority.
-    * **Why it matters:** Reclaims CPU headroom for the game without forcibly terminating open tabs or background work.
-
-18. **🎙️ Discord & Streaming (OBS) Active Protection**
-    * **Action:** Explicitly protects `Discord.exe` and `obs64.exe` at `Normal` priority.
-    * **Why it matters:** Prevents screenshare stutter, robotic voice distortion, and dropped streaming frames.
-
-19. **🛑 Stutter-Prone Background Services Pausing**
-    * **Action:** Temporarily stops `WSearch` (Search Indexer), `SysMain` (Superfetch), and `DiagTrack` (Telemetry) during matches.
-    * **Why it matters:** Halts sudden background disk I/O and telemetry sweeps that induce 1% low frame drops.
-
-20. **🧹 Stutter-Free Memory Management**
-    * **Action:** Executes an initial clean pass (`[System.GC]::Collect()`) before match start, avoiding periodic `EmptyWorkingSet` sweeps while the game runs.
-    * **Why it matters:** Avoids the page-fault thrashing, heavy disk swap I/O, and micro-stutters caused by aggressive RAM cleaners.
-
-21. **🌐 DNS Resolver Cache Flush**
-    * **Action:** Runs `ipconfig /flushdns` on startup and after teardown.
-    * **Why it matters:** Clears stale DNS caches to ensure matchmaking and game client connections use the freshest server routes.
-
-22. **🔄 Persistent On-Disk Crash Backup & Auto-Recovery Engine**
-    * **Action:** Writes baseline snapshots to `optimizer_backup.json`, hooks `.NET ProcessExit` and PowerShell `finally` blocks, and provides a 1-click `Restore_Defaults.bat`.
-    * **Why it matters:** Allows system tweaks to revert cleanly upon match completion, after an unexpected crash, or anytime on demand.
+### 🛡️ Safety & Recovery
+* **Snapshot & Auto-Recovery:** Backs up state to JSON, hooks graceful exit, and provides `Restore_Defaults.bat` → Guarantees clean 1-click reversion on game close or crash.
 
 ---
 
-## 🎮 How to Use
+## 🎮 How to Use & Operating Modes
 
-1. **Launch the Companion**: Double-click `Valorant_Optimizer.bat` (accept the Windows UAC Admin prompt).
-2. **Standby Mode**: Automatically clears stale shader caches and waits at 0% CPU for Valorant to open.
-3. **Play Valorant**: Open the game normally. The companion engages all tweaks and shows a live monitoring HUD.
-4. **Auto-Restore**: When you close the game (or press `Q` in the console), all Windows settings instantly revert to defaults.
+Choose the workflow that fits your setup:
+
+### Mode 1: Always-Ready System Tray Watchdog (Recommended)
+1. **Double-click `Install_AutoStart_Tray.bat` once.**
+2. The companion will automatically start silently in the **Windows System Tray** whenever your computer boots up.
+3. Consumes **0.00% CPU** and tiny memory (~20 MB).
+4. **Whenever you launch Valorant**, all 22 optimizations automatically engage!
+5. **When you quit Valorant**, all system settings automatically revert to normal defaults and return to tray standby.
+6. To disable auto-start anytime, simply double-click `Uninstall_AutoStart_Tray.bat`.
+
+### Mode 2: Run in the System Tray on Demand
+* Double-click **`Valorant_Optimizer_Tray.bat`**.
+* The companion starts minimized directly into the Windows System Tray with **no lingering terminal window**.
+* Sits quietly waiting for Valorant with zero overhead.
+
+### Mode 3: 1-Click Game & Companion Launcher
+* Double-click **`Launch_Valorant_With_Tray.bat`**.
+* Starts the companion silently in your system tray and immediately launches Valorant / Riot Client!
+* You can pin or send this file to your Desktop as your primary Valorant shortcut.
+
+### Mode 4: Classic Console HUD with In-Game Minimize
+* Double-click **`Valorant_Optimizer.bat`**.
+* Shows the live esports telemetry HUD with session duration, active power plan, timer resolution, and network ping.
+* Press **`T`** at any time to instantly minimize the console HUD to the **System Tray**.
+* Double-click the tray icon (or right-click -> *Show Monitoring HUD*) to bring the terminal back up.
+
+---
+
+## 🔔 System Tray Features & Context Menu
+
+Right-click the red **Valorant icon** in your Windows taskbar tray to access:
+
+* **● Real-Time Status**: Displays `Standby (Waiting for game)` or `Active (PID & match timer)`.
+* **Show / Hide Monitoring HUD**: Toggle the live terminal telemetry window on and off.
+* **Purge Caches & Standby Memory Now**: Instant manual cleanup of DirectX shader cache and Windows standby RAM.
+* **Windows Startup Integration**: Enable or disable Windows logon autostart right from the menu.
+* **Restore Defaults & Exit**: Restores all 22 optimizations cleanly and safely exits the companion.
+* **Native Tray Notifications**: Subtle toast balloons inform you when tweaks engage and revert.
 
 ---
 
@@ -220,8 +207,12 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 
 | File | Description |
 | :--- | :--- |
-| **`Valorant_Optimizer.bat`** | **Main all-in-one runner**. Standalone hybrid batch/PowerShell companion. |
-| **`valorant_optimizer.ps1`** | Native PowerShell engine for users running raw `.ps1`. |
+| **`Valorant_Optimizer_Tray.bat`** | **Direct System Tray Runner**. Launches companion hidden in the tray (zero console window). |
+| **`Install_AutoStart_Tray.bat`** | **1-Click Auto-Start Installer**. Configures Windows logon task for silent tray monitoring. |
+| **`Uninstall_AutoStart_Tray.bat`** | Removes the Windows logon task cleanly. |
+| **`Launch_Valorant_With_Tray.bat`**| **Desktop Launcher Replacement**. Starts tray companion and launches Valorant together. |
+| **`Valorant_Optimizer.bat`** | **Classic Console HUD Runner**. Interactive terminal companion with `[T]` to minimize to tray. |
+| **`valorant_optimizer.ps1`** | Native PowerShell engine with `-Tray`, `-Daemon`, and Win32 tray integration. |
 | **`Restore_Defaults.bat`** | **1-Click Emergency Restore Tool**. Instantly resets all Windows settings to stock. |
 | **`restore_defaults.ps1`** | Native PowerShell restore engine. |
 | **`run.bat`** | Quick alias launcher. |

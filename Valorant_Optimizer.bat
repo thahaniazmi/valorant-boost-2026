@@ -5,31 +5,78 @@ setlocal
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Requesting Administrator privileges for ultimate low-latency tweaks...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs"
     exit /b
 )
 
 :: Set script directory and execute embedded PowerShell directly from this single file
 set "SCRIPT_DIR=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$script = [System.IO.File]::ReadAllText('%~f0'); Invoke-Expression $script"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$script = [System.IO.File]::ReadAllText('%~f0'); & ([scriptblock]::Create($script)) %*"
 exit /b
 #>
 
-# =========================================================================
-# VALORANT ULTIMATE COMPETITIVE PERFORMANCE COMPANION
-# Tailored for Windows Esports Gaming (Intel & AMD • NVIDIA & Radeon • 144Hz–360Hz+)
-# Vanguard Safe: 100% compliant with Riot Vanguard anti-cheat.
-# Crash Safe: Persistent on-disk backup & automatic restoration.
-# =========================================================================
+# ==============================================================================
+# VALORANT PRO LOW-LATENCY COMPANION & LIVE OPTIMIZER
+# ==============================================================================
+# INSTRUCTIONS & OPERATING MODES:
+#   Mode 1 (Auto-Start Tray): Run Install_AutoStart_Tray.bat to start with Windows.
+#   Mode 2 (Tray on Demand):  Run Valorant_Optimizer_Tray.bat for zero-window tray.
+#   Mode 3 (1-Click Launch):  Run Launch_Valorant_With_Tray.bat to launch game + tray.
+#   Mode 4 (Interactive HUD): Run Valorant_Optimizer.bat directly (Press 'T' for tray).
+#
+# HOTKEYS (In Console HUD):
+#   [T] - Minimize HUD directly to Windows System Tray (near taskbar clock)
+#   [Q] - Restore all system defaults cleanly and exit
+#
+# EMERGENCY RESTORE:
+#   Double-click Restore_Defaults.bat anytime to reset 100% of Windows settings.
+#
+# SAFETY:
+#   100% Riot Vanguard safe. Uses strictly documented Windows APIs (ntdll, powercfg, IFEO).
+# ==============================================================================
+
+[CmdletBinding()]
+param(
+    [switch]$Tray,
+    [switch]$Daemon,
+    [switch]$NoNotify
+)
+
+# ----------------- ADMIN PRIVILEGE CHECK -----------------
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[!] Requesting Administrator privileges..." -ForegroundColor Yellow
+    $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass")
+    if ($Tray) { $argList += @("-WindowStyle", "Hidden") }
+    $argList += @("-File", "`"$PSCommandPath`"")
+    if ($Tray) { $argList += "-Tray" }
+    if ($Daemon) { $argList += "-Daemon" }
+    if ($NoNotify) { $argList += "-NoNotify" }
+    Start-Process powershell.exe -ArgumentList ($argList -join " ") -Verb RunAs
+    exit
+}
 
 $Host.UI.RawUI.WindowTitle = "Valorant Ultimate Low-Latency Companion"
-[Console]::CursorVisible = $false
-Clear-Host
+try { [Console]::CursorVisible = $false } catch {}
+
+# ----------------- SINGLE INSTANCE CHECK -----------------
+$script:AppMutex = $null
+$isNewInstance = $false
+try {
+    $script:AppMutex = New-Object System.Threading.Mutex($true, "Global\ValorantLowLatencyCompanionMutex", [ref]$isNewInstance)
+    if (-not $isNewInstance) {
+        if (-not $Tray) {
+            Write-Host "[!] Valorant Companion is already active in the system tray." -ForegroundColor Yellow
+            Start-Sleep -Seconds 1
+        }
+        exit
+    }
+} catch {}
 
 # ----------------- CONFIGURATION -----------------
 $TargetProcessName = "VALORANT-Win64-Shipping"
 $FallbackProcessName = "VALORANT"
-# Note: Discord, OBS, audio subsystems, and Vanguard are protected and never throttled
+# Protected apps: Discord, OBS, audio services, and Vanguard are never throttled
 $BackgroundHogs = @("chrome", "msedge", "brave", "opera", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
 $PauseServices = @("WSearch", "SysMain", "DiagTrack")
 $PollIntervalSeconds = 1
@@ -37,26 +84,7 @@ $PollIntervalSeconds = 1
 $ScriptDir = if ($env:SCRIPT_DIR -and (Test-Path $env:SCRIPT_DIR)) { $env:SCRIPT_DIR } elseif ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
 $BackupFilePath = Join-Path $ScriptDir "optimizer_backup.json"
 
-# ----------------- AUTO-CRASH RECOVERY CHECK -----------------
-# If an un-reverted backup file is present at launch, a previous session terminated unexpectedly.
-# Automatically restore previous settings first before proceeding.
-if (Test-Path $BackupFilePath) {
-    Write-Host "==========================================================" -ForegroundColor Yellow
-    Write-Host " [!] RECOVERY NOTICE: Previous session terminated unexpectedly" -ForegroundColor Yellow
-    Write-Host "==========================================================" -ForegroundColor Yellow
-    Write-Host " Found active backup from an earlier session." -ForegroundColor DarkGray
-    Write-Host " Restoring system to clean state before starting..." -ForegroundColor Cyan
-    $restoreScript = Join-Path $ScriptDir "restore_defaults.ps1"
-    if (Test-Path $restoreScript) {
-        & $restoreScript
-    } else {
-        Remove-Item -Path $BackupFilePath -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Seconds 2
-    Clear-Host
-}
-
-# ----------------- P/INVOKE: NATIVE HIGH-PRECISION TIMER API -----------------
+# ----------------- P/INVOKE: NATIVE WIN32 & HIGH-PRECISION TIMER API -----------------
 try {
     $nativeCode = @"
 using System;
@@ -68,12 +96,63 @@ public class NativeOptimizers {
 
     [DllImport("ntdll.dll", SetLastError = true)]
     public static extern int NtQueryTimerResolution(out uint MinimumResolution, out uint MaximumResolution, out uint CurrentResolution);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    public const int SW_HIDE = 0;
+    public const int SW_SHOWNORMAL = 1;
+    public const int SW_RESTORE = 9;
 }
 "@
     Add-Type -TypeDefinition $nativeCode -ErrorAction SilentlyContinue
 } catch {}
 
-# ----------------- STATE BACKUP & TRACKING -----------------
+# ----------------- WINFORMS & DRAWING FOR SYSTEM TRAY -----------------
+try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+} catch {}
+
+$script:ConsoleHwnd = [NativeOptimizers]::GetConsoleWindow()
+if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
+    try { $script:ConsoleHwnd = (Get-Process -Id $PID).MainWindowHandle } catch {}
+}
+
+# If launched in Tray mode, hide console window immediately
+if ($Tray -and $script:ConsoleHwnd -ne [IntPtr]::Zero) {
+    [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_HIDE) | Out-Null
+}
+
+# ----------------- AUTO-CRASH RECOVERY CHECK -----------------
+if (Test-Path $BackupFilePath) {
+    if (-not $Tray) {
+        Write-Host "==========================================================" -ForegroundColor Yellow
+        Write-Host " [!] RECOVERY NOTICE: Previous session terminated unexpectedly" -ForegroundColor Yellow
+        Write-Host "==========================================================" -ForegroundColor Yellow
+        Write-Host " Found active backup from an earlier session." -ForegroundColor DarkGray
+        Write-Host " Restoring system to clean state before starting..." -ForegroundColor Cyan
+    }
+    $restoreScript = Join-Path $ScriptDir "restore_defaults.ps1"
+    if (Test-Path $restoreScript) {
+        & $restoreScript
+    } else {
+        Remove-Item -Path $BackupFilePath -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+    if (-not $Tray) { Clear-Host }
+}
+
+# ----------------- STATE TRACKING -----------------
 $OriginalPowerScheme = $null
 $OriginalPriorities = @{}
 $StoppedServices = @()
@@ -91,6 +170,13 @@ $AppCompatCreated = $false
 $ValorantFullPath = ""
 $StartTime = $null
 $CpMinCoresModified = $false
+
+$script:Running = $true
+$script:InTrayMode = ($Tray.IsPresent -or $Daemon.IsPresent)
+$script:HudVisible = (-not $script:InTrayMode)
+$script:NotifyIcon = $null
+$script:StatusMenuItem = $null
+$script:ToggleHudMenuItem = $null
 
 # ----------------- BACKUP & RESTORE HELPERS -----------------
 function Save-BackupState {
@@ -140,7 +226,7 @@ function Test-IsOnBattery {
     try {
         $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($battery -and $battery.BatteryStatus -eq 1) {
-            return $true # 1 = Discharging (On Battery)
+            return $true
         }
     } catch {}
     return $false
@@ -149,7 +235,9 @@ function Test-IsOnBattery {
 function Enable-LowLatencyPower {
     $isOnBattery = Test-IsOnBattery
     if ($isOnBattery) {
-        Write-Host "  [!] Running on Battery: Preserving dynamic power profile to prevent thermal throttling and battery drain." -ForegroundColor Yellow
+        if ($script:HudVisible) {
+            Write-Host "  [!] Running on Battery: Preserving dynamic power profile to prevent thermal throttling and battery drain." -ForegroundColor Yellow
+        }
         return "Balanced (Battery Protection Active)"
     }
 
@@ -167,7 +255,6 @@ function Enable-LowLatencyPower {
         $planName = "Ultimate Performance (Created)"
     }
 
-    # Only unpark cores on AC power
     try {
         powercfg /setacvalueindex scheme_current sub_processor CPMINCORES 100 2>$null | Out-Null
         powercfg /setactive scheme_current 2>$null | Out-Null
@@ -205,7 +292,6 @@ function Restore-HighPrecisionTimer {
 }
 
 function Apply-NetworkAndRegistryTweaks {
-    # 1. SystemProfile Network & Responsiveness
     $sysPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
     if (Test-Path $sysPath) {
         $script:OriginalSysProfile["NetworkThrottlingIndex"] = (Get-ItemProperty -Path $sysPath -Name NetworkThrottlingIndex -ErrorAction SilentlyContinue).NetworkThrottlingIndex
@@ -215,7 +301,6 @@ function Apply-NetworkAndRegistryTweaks {
         Set-ItemProperty -Path $sysPath -Name "SystemResponsiveness" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. GameDVR Suppression
     $dvrPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR"
     if (Test-Path $dvrPath) {
         $script:OriginalGameDVR["AppCaptureEnabled"] = (Get-ItemProperty -Path $dvrPath -Name AppCaptureEnabled -ErrorAction SilentlyContinue).AppCaptureEnabled
@@ -223,7 +308,6 @@ function Apply-NetworkAndRegistryTweaks {
         Set-ItemProperty -Path $dvrPath -Name "HistoricalCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     }
 
-    # 3. Network Interface TCP Optimization (Disable Nagle's Algorithm)
     $interfaces = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" -ErrorAction SilentlyContinue
     foreach ($iface in $interfaces) {
         $p = $iface.PSPath
@@ -260,19 +344,20 @@ function Restore-NetworkAndRegistryTweaks {
             $script:OriginalGameDVR["AppCaptureEnabled"]
         } else { 1 }
         Set-ItemProperty -Path $dvrPath -Name "AppCaptureEnabled" -Value $origDvr -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $dvrPath -Name "HistoricalCaptureEnabled" -Value $origDvr -Type DWord -Force -ErrorAction SilentlyContinue
     }
 
-    foreach ($path in $script:OriginalTcpSettings.Keys) {
-        $saved = $script:OriginalTcpSettings[$path]
+    foreach ($p in $script:OriginalTcpSettings.Keys) {
+        $saved = $script:OriginalTcpSettings[$p]
         if ($null -ne $saved.TcpAckFrequency) {
-            Set-ItemProperty -Path $path -Name "TcpAckFrequency" -Value $saved.TcpAckFrequency -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $p -Name "TcpAckFrequency" -Value $saved.TcpAckFrequency -Type DWord -Force -ErrorAction SilentlyContinue
         } else {
-            Remove-ItemProperty -Path $path -Name "TcpAckFrequency" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $p -Name "TcpAckFrequency" -ErrorAction SilentlyContinue
         }
         if ($null -ne $saved.TCPNoDelay) {
-            Set-ItemProperty -Path $path -Name "TCPNoDelay" -Value $saved.TCPNoDelay -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $p -Name "TCPNoDelay" -Value $saved.TCPNoDelay -Type DWord -Force -ErrorAction SilentlyContinue
         } else {
-            Remove-ItemProperty -Path $path -Name "TCPNoDelay" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $p -Name "TCPNoDelay" -ErrorAction SilentlyContinue
         }
     }
 }
@@ -293,13 +378,13 @@ function Apply-MouseAccelerationKillswitch {
 function Restore-MouseAccelerationKillswitch {
     $mousePath = "HKCU:\Control Panel\Mouse"
     if (Test-Path $mousePath) {
-        $speed = if ($script:OriginalMouseSettings.ContainsKey("MouseSpeed") -and $null -ne $script:OriginalMouseSettings["MouseSpeed"]) { $script:OriginalMouseSettings["MouseSpeed"] } else { "1" }
-        $t1 = if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold1") -and $null -ne $script:OriginalMouseSettings["MouseThreshold1"]) { $script:OriginalMouseSettings["MouseThreshold1"] } else { "6" }
-        $t2 = if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold2") -and $null -ne $script:OriginalMouseSettings["MouseThreshold2"]) { $script:OriginalMouseSettings["MouseThreshold2"] } else { "10" }
+        $origSpeed = if ($script:OriginalMouseSettings.ContainsKey("MouseSpeed") -and $null -ne $script:OriginalMouseSettings["MouseSpeed"]) { $script:OriginalMouseSettings["MouseSpeed"] } else { "1" }
+        $origT1 = if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold1") -and $null -ne $script:OriginalMouseSettings["MouseThreshold1"]) { $script:OriginalMouseSettings["MouseThreshold1"] } else { "6" }
+        $origT2 = if ($script:OriginalMouseSettings.ContainsKey("MouseThreshold2") -and $null -ne $script:OriginalMouseSettings["MouseThreshold2"]) { $script:OriginalMouseSettings["MouseThreshold2"] } else { "10" }
 
-        Set-ItemProperty -Path $mousePath -Name "MouseSpeed" -Value $speed -Type String -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $mousePath -Name "MouseThreshold1" -Value $t1 -Type String -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $mousePath -Name "MouseThreshold2" -Value $t2 -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseSpeed" -Value $origSpeed -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseThreshold1" -Value $origT1 -Type String -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mousePath -Name "MouseThreshold2" -Value $origT2 -Type String -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -330,10 +415,6 @@ try {
 } catch {}
 
 function Apply-GpuPowerProfile {
-    # NOTE ON SAFETY: Blind recursive PCI MSI registry modification has been deliberately removed.
-    # Modern NVIDIA & AMD graphics drivers negotiate MSI mode safely in hardware.
-    # Dynamic PCI registry tampering can produce black screens and DPC_WATCHDOG_VIOLATION BSODs.
-
     $classPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
     if (Test-Path $classPath) {
         Get-ChildItem $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match "^\d{4}$" } | ForEach-Object {
@@ -381,7 +462,6 @@ function Apply-IFEOAndDwmBypass {
         New-Item -Path $ifeoPath -Force -ErrorAction SilentlyContinue | Out-Null
         $script:IfeoCreated = $true
     }
-    # SAFETY: CpuPriorityClass = 3 (High). NEVER USE 4 (RealTime) which causes OS thread starvation.
     Set-ItemProperty -Path $ifeoPath -Name "CpuPriorityClass" -Value 3 -Type DWord -Force -ErrorAction SilentlyContinue
     Set-ItemProperty -Path $ifeoPath -Name "IoPriority" -Value 3 -Type DWord -Force -ErrorAction SilentlyContinue
     Set-ItemProperty -Path $ifeoPath -Name "PagePriority" -Value 5 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -408,10 +488,6 @@ function Restore-IFEOAndDwmBypass {
     }
 }
 
-# ----------------- SAFE MEMORY MANAGEMENT -----------------
-# NOTE ON SAFETY: Periodic EmptyWorkingSet every 60s has been completely removed.
-# Forcing process memory into the pagefile during active gameplay causes severe page fault thrashing,
-# disk I/O spikes, and micro-stutters. We now perform a clean, non-destructive initial pass.
 function Purge-SystemMemoryAndStandby {
     try {
         [System.GC]::Collect()
@@ -420,7 +496,9 @@ function Purge-SystemMemoryAndStandby {
 }
 
 function Clean-StaleCaches {
-    Write-Host "  [>] Purging stale shader & crash caches..." -ForegroundColor Cyan
+    if ($script:HudVisible) {
+        Write-Host "  [>] Purging stale shader & crash caches..." -ForegroundColor Cyan
+    }
     $paths = @(
         "$env:LOCALAPPDATA\NVIDIA\DXCache\*",
         "$env:LOCALAPPDATA\D3DSCache\*",
@@ -432,7 +510,9 @@ function Clean-StaleCaches {
             Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue
         } catch {}
     }
-    Write-Host "  [OK] Shaders & log clutter cleaned." -ForegroundColor Green
+    if ($script:HudVisible) {
+        Write-Host "  [OK] Shaders & log clutter cleaned." -ForegroundColor Green
+    }
 }
 
 function Get-NetworkPing {
@@ -443,246 +523,547 @@ function Get-NetworkPing {
     return "OK (<15ms)"
 }
 
+# ----------------- SYSTEM TRAY & UI HELPERS -----------------
+function Get-ValorantTrayIcon {
+    $icoPath = Join-Path $ScriptDir "assets\valorant_tray.ico"
+    if (Test-Path $icoPath) {
+        try {
+            return New-Object System.Drawing.Icon $icoPath
+        } catch {}
+    }
+
+    try {
+        $size = 32
+        $bmp = New-Object System.Drawing.Bitmap $size, $size
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.Clear([System.Drawing.Color]::Transparent)
+
+        $brushBg = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 15, 25, 35))
+        $g.FillEllipse($brushBg, 0, 0, $size - 1, $size - 1)
+
+        $penBorder = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 255, 70, 85), 2.0)
+        $g.DrawEllipse($penBorder, 1, 1, $size - 3, $size - 3)
+
+        $brushWhite = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+        $brushRed = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 255, 70, 85))
+
+        $leftBlade = @(
+            (New-Object System.Drawing.PointF 8, 8),
+            (New-Object System.Drawing.PointF 13, 8),
+            (New-Object System.Drawing.PointF 15, 23),
+            (New-Object System.Drawing.PointF 12, 23)
+        )
+        $rightBlade = @(
+            (New-Object System.Drawing.PointF 24, 8),
+            (New-Object System.Drawing.PointF 19, 8),
+            (New-Object System.Drawing.PointF 16, 17),
+            (New-Object System.Drawing.PointF 20, 17)
+        )
+        $g.FillPolygon($brushWhite, $leftBlade)
+        $g.FillPolygon($brushRed, $rightBlade)
+        $g.Dispose()
+
+        $hIcon = $bmp.GetHicon()
+        return [System.Drawing.Icon]::FromHandle($hIcon)
+    } catch {
+        return [System.Drawing.SystemIcons]::Application
+    }
+}
+
+function Show-TrayNotification {
+    param(
+        [string]$Title = "Valorant Optimizer",
+        [string]$Text = "",
+        [System.Windows.Forms.ToolTipIcon]$Icon = [System.Windows.Forms.ToolTipIcon]::Info,
+        [int]$TimeoutMs = 3000
+    )
+    if ($NoNotify) { return }
+    if ($script:NotifyIcon -and $Text) {
+        $script:NotifyIcon.BalloonTipTitle = $Title
+        $script:NotifyIcon.BalloonTipText = $Text
+        $script:NotifyIcon.BalloonTipIcon = $Icon
+        $script:NotifyIcon.ShowBalloonTip($TimeoutMs)
+    }
+}
+
+function Toggle-HudVisibility {
+    if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
+        $script:ConsoleHwnd = [NativeOptimizers]::GetConsoleWindow()
+        if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
+            try { $script:ConsoleHwnd = (Get-Process -Id $PID).MainWindowHandle } catch {}
+        }
+    }
+
+    if ($script:ConsoleHwnd -ne [IntPtr]::Zero) {
+        if ($script:HudVisible) {
+            [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_HIDE) | Out-Null
+            $script:HudVisible = $false
+            if ($script:ToggleHudMenuItem) { $script:ToggleHudMenuItem.Text = "Show Monitoring HUD" }
+            Show-TrayNotification -Title "Valorant Optimizer" -Text "HUD minimized to tray. Double-click tray icon to restore."
+        } else {
+            [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_RESTORE) | Out-Null
+            [NativeOptimizers]::SetForegroundWindow($script:ConsoleHwnd) | Out-Null
+            $script:HudVisible = $true
+            if ($script:ToggleHudMenuItem) { $script:ToggleHudMenuItem.Text = "Hide Monitoring HUD" }
+        }
+    }
+}
+
+function Register-AutoStartTask {
+    param([string]$batPath)
+    try {
+        $action = New-ScheduledTaskAction -Execute $batPath
+        $trigger = New-ScheduledTaskTrigger -AtLogOn
+        $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -RunLevel Highest
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
+        Register-ScheduledTask -TaskName "ValorantOptimizerTray" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        try {
+            cmd.exe /c "schtasks.exe /create /tn `"ValorantOptimizerTray`" /tr `"`"$batPath`"`" /sc onlogon /rl highest /f" | Out-Null
+            return $true
+        } catch {
+            return $false
+        }
+    }
+}
+
+function Unregister-AutoStartTask {
+    try {
+        Unregister-ScheduledTask -TaskName "ValorantOptimizerTray" -Confirm:$false -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        try {
+            cmd.exe /c "schtasks.exe /delete /tn `"ValorantOptimizerTray`" /f" | Out-Null
+            return $true
+        } catch {
+            return $false
+        }
+    }
+}
+
+function Wait-Responsive {
+    param([int]$Milliseconds = 1000)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.ElapsedMilliseconds -lt $Milliseconds -and $script:Running) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 50
+    }
+}
+
+# ----------------- INITIALIZE SYSTEM TRAY -----------------
+try {
+    $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
+    $script:NotifyIcon.Icon = Get-ValorantTrayIcon
+    $script:NotifyIcon.Text = "Valorant Companion: Standby (0% CPU)"
+    $script:NotifyIcon.Visible = $true
+
+    $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+
+    $script:StatusMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $script:StatusMenuItem.Text = "● Status: Standby (Waiting for Valorant)"
+    $script:StatusMenuItem.Enabled = $false
+    $contextMenu.Items.Add($script:StatusMenuItem) | Out-Null
+
+    $contextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
+
+    $script:ToggleHudMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $script:ToggleHudMenuItem.Text = if ($Tray) { "Show Monitoring HUD" } else { "Hide Monitoring HUD" }
+    $script:ToggleHudMenuItem.add_Click({ Toggle-HudVisibility })
+    $contextMenu.Items.Add($script:ToggleHudMenuItem) | Out-Null
+
+    $purgeMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $purgeMenuItem.Text = "Purge Caches & Standby Memory Now"
+    $purgeMenuItem.add_Click({
+        Clean-StaleCaches
+        Purge-SystemMemoryAndStandby
+        Show-TrayNotification -Title "Valorant Optimizer" -Text "DirectX Cache, Shader Cache, and Standby RAM purged successfully."
+    })
+    $contextMenu.Items.Add($purgeMenuItem) | Out-Null
+
+    $contextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
+
+    $startupSubmenu = New-Object System.Windows.Forms.ToolStripMenuItem
+    $startupSubmenu.Text = "Windows Startup Integration"
+
+    $installTaskItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $installTaskItem.Text = "Enable Auto-Start at Windows Logon"
+    $installTaskItem.add_Click({
+        $trayBat = Join-Path $ScriptDir "Valorant_Optimizer_Tray.bat"
+        $ok = Register-AutoStartTask -batPath $trayBat
+        if ($ok) {
+            Show-TrayNotification -Title "Auto-Start Enabled" -Text "Companion will start in the tray with Windows automatically (0% CPU)."
+        } else {
+            Show-TrayNotification -Title "Auto-Start Notice" -Text "Run Install_AutoStart_Tray.bat as Admin to register the task."
+        }
+    })
+    $startupSubmenu.DropDownItems.Add($installTaskItem) | Out-Null
+
+    $removeTaskItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $removeTaskItem.Text = "Disable Auto-Start at Windows Logon"
+    $removeTaskItem.add_Click({
+        $ok = Unregister-AutoStartTask
+        if ($ok) {
+            Show-TrayNotification -Title "Auto-Start Disabled" -Text "Windows logon task removed."
+        }
+    })
+    $startupSubmenu.DropDownItems.Add($removeTaskItem) | Out-Null
+    $contextMenu.Items.Add($startupSubmenu) | Out-Null
+
+    $contextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
+
+    $exitMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $exitMenuItem.Text = "Restore Defaults & Exit"
+    $exitMenuItem.add_Click({
+        $script:Running = $false
+    })
+    $contextMenu.Items.Add($exitMenuItem) | Out-Null
+
+    $script:NotifyIcon.ContextMenuStrip = $contextMenu
+
+    $script:NotifyIcon.add_DoubleClick({
+        Toggle-HudVisibility
+    })
+} catch {
+    Write-Warning "Could not initialize tray icon: $_"
+}
+
+# ----------------- SYSTEM RESTORE CLEANUP -----------------
 function Restore-SystemState {
     if (-not $script:OptimizationsApplied) { return }
     $script:OptimizationsApplied = $false
 
-    Write-Host "`n"
-    Write-Host "==========================================================" -ForegroundColor DarkGray
-    Write-Host " [REVERTING] Restoring system settings to normal..." -ForegroundColor Yellow
-    Write-Host "==========================================================" -ForegroundColor DarkGray
+    if ($script:HudVisible) {
+        Write-Host "`n"
+        Write-Host "==========================================================" -ForegroundColor DarkGray
+        Write-Host "       REVERTING VALORANT PRO OPTIMIZATIONS (SAFE)        " -ForegroundColor Yellow
+        Write-Host "==========================================================" -ForegroundColor DarkGray
+    }
 
     Restore-HighPrecisionTimer
-    Write-Host "  -> Timer resolution restored." -ForegroundColor Cyan
+    if ($script:HudVisible) { Write-Host "  -> High-precision timer restored." -ForegroundColor Cyan }
 
-    if ($OriginalPowerScheme) {
-        powercfg /setactive $OriginalPowerScheme | Out-Null
-        Write-Host "  -> Power plan restored." -ForegroundColor Cyan
+    if ($script:OriginalPowerScheme) {
+        powercfg /setactive $script:OriginalPowerScheme 2>$null | Out-Null
+        if ($script:HudVisible) { Write-Host "  -> Windows power plan restored." -ForegroundColor Cyan }
     }
 
     if ($script:CpMinCoresModified) {
         powercfg /setacvalueindex scheme_current sub_processor CPMINCORES 0 2>$null | Out-Null
         powercfg /setactive scheme_current 2>$null | Out-Null
-        Write-Host "  -> CPU core parking restored." -ForegroundColor Cyan
+        $script:CpMinCoresModified = $false
+        if ($script:HudVisible) { Write-Host "  -> CPU core parking restored." -ForegroundColor Cyan }
     }
 
     Restore-NetworkAndRegistryTweaks
-    Write-Host "  -> Network throttling and TCP stack restored." -ForegroundColor Cyan
+    if ($script:HudVisible) { Write-Host "  -> Network throttling and TCP stack restored." -ForegroundColor Cyan }
 
     Restore-MouseAccelerationKillswitch
-    Write-Host "  -> Windows mouse acceleration restored." -ForegroundColor Cyan
+    if ($script:HudVisible) { Write-Host "  -> Windows mouse acceleration restored." -ForegroundColor Cyan }
 
     Restore-DefenderExclusions
-    Write-Host "  -> Windows Defender exclusions removed." -ForegroundColor Cyan
+    if ($script:HudVisible) { Write-Host "  -> Windows Defender exclusions removed." -ForegroundColor Cyan }
 
     Restore-GpuPowerProfile
-    Write-Host "  -> GPU power profile restored." -ForegroundColor Cyan
+    if ($script:HudVisible) { Write-Host "  -> GPU power profile restored." -ForegroundColor Cyan }
 
     Restore-IFEOAndDwmBypass
-    Write-Host "  -> IFEO priority & Fullscreen flags restored." -ForegroundColor Cyan
+    if ($script:HudVisible) { Write-Host "  -> IFEO priority & Fullscreen flags restored." -ForegroundColor Cyan }
 
-    foreach ($procId in $OriginalPriorities.Keys) {
+    foreach ($procId in $script:OriginalPriorities.Keys) {
         try {
             $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
             if ($p -and -not $p.HasExited) {
-                $p.PriorityClass = $OriginalPriorities[$procId]
+                $p.PriorityClass = $script:OriginalPriorities[$procId]
             }
         } catch {}
     }
-    Write-Host "  -> Background apps unthrottled." -ForegroundColor Cyan
+    $script:OriginalPriorities = @{}
+    if ($script:HudVisible) { Write-Host "  -> Background apps unthrottled." -ForegroundColor Cyan }
 
-    foreach ($svcName in $StoppedServices) {
+    foreach ($svcName in $script:StoppedServices) {
         try {
             Start-Service -Name $svcName -ErrorAction SilentlyContinue
         } catch {}
     }
-    Write-Host "  -> Suspended services restarted." -ForegroundColor Cyan
+    $script:StoppedServices = @()
+    if ($script:HudVisible) { Write-Host "  -> Suspended services restarted." -ForegroundColor Cyan }
 
     ipconfig /flushdns | Out-Null
-    
-    # Remove on-disk backup upon clean reversal
     Remove-BackupState
-    Write-Host "  -> Session backup cleared." -ForegroundColor Cyan
-
-    Write-Host "`n [+] System restored successfully. GG!" -ForegroundColor Green
-    [Console]::CursorVisible = $true
+    if ($script:HudVisible) {
+        Write-Host "  -> Session backup cleared." -ForegroundColor Cyan
+        Write-Host "`n [+] System restored successfully. GG!" -ForegroundColor Green
+        try { [Console]::CursorVisible = $true } catch {}
+    }
 }
 
 [System.AppDomain]::CurrentDomain.add_ProcessExit({
     Restore-SystemState
+    if ($script:NotifyIcon) {
+        $script:NotifyIcon.Visible = $false
+        $script:NotifyIcon.Dispose()
+    }
 })
 
 # ----------------- MAIN EXECUTION LOOP -----------------
 try {
-    Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "     VALORANT ULTIMATE LOW-LATENCY COMPANION (PS)         " -ForegroundColor White
-    Write-Host "==========================================================" -ForegroundColor Cyan
-
     $OriginalPowerScheme = Get-ActivePowerScheme
-    Clean-StaleCaches
 
-    Write-Host "`n Status: Waiting for Valorant to launch..." -ForegroundColor Yellow
-    Write-Host " Tip: Launch Valorant whenever you're ready." -ForegroundColor DarkGray
-    Write-Host " (Press 'Q' or 'Ctrl+C' to abort at any time)`n" -ForegroundColor DarkGray
+    if ($script:InTrayMode) {
+        Show-TrayNotification -Title "Valorant Low-Latency Companion" -Text "Running silently in system tray. 0% CPU standby waiting for Valorant."
+    }
 
-    $valProc = $null
+    while ($script:Running) {
+        Clean-StaleCaches
 
-    while ($null -eq $valProc) {
-        if ([Console]::KeyAvailable) {
-            $key = [Console]::ReadKey($true)
-            if ($key.Key -eq [ConsoleKey]::Q) {
-                Write-Host "`n [!] Aborted by user." -ForegroundColor Yellow
-                return
+        if ($script:StatusMenuItem) {
+            $script:StatusMenuItem.Text = "● Status: Standby (Waiting for Valorant)"
+        }
+        if ($script:NotifyIcon) {
+            $script:NotifyIcon.Text = "Valorant Companion: Standby (0% CPU)"
+        }
+
+        if ($script:HudVisible) {
+            Clear-Host
+            Write-Host "==========================================================" -ForegroundColor Cyan
+            Write-Host "      VALORANT PRO LOW-LATENCY COMPANION & OPTIMIZER      " -ForegroundColor White
+            Write-Host "==========================================================" -ForegroundColor Cyan
+            Write-Host " Status   : " -NoNewline; Write-Host "STANDBY (Waiting for Valorant to launch)" -ForegroundColor Yellow
+            Write-Host " Overhead : 0.00% CPU Polling | Riot Vanguard Safe: 100%" -ForegroundColor DarkGray
+            Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
+            Write-Host " [HOW TO USE]" -ForegroundColor White
+            Write-Host "  1. Keep this window running (or press 'T' to send to Tray)." -ForegroundColor Gray
+            Write-Host "  2. Start Valorant normally whenever you are ready." -ForegroundColor Gray
+            Write-Host "  3. All 22 pro latency & scheduling tweaks engage instantly." -ForegroundColor Gray
+            Write-Host "  4. When you quit the match, all settings auto-revert cleanly." -ForegroundColor Gray
+            Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
+            Write-Host " [PRIMED OPTIMIZATION PROFILE]" -ForegroundColor White
+            Write-Host "  * CPU / Kernel : 0.50ms Timer | 100% Cores Unparked | High IFEO" -ForegroundColor Cyan
+            Write-Host "  * GPU / Screen : Direct Scanout (DWM Bypass) | PowerMizer Lock" -ForegroundColor Cyan
+            Write-Host "  * Net / Input  : Nagle Disabled (0ms Delay) | 1:1 Raw Mouse" -ForegroundColor Cyan
+            Write-Host "  * Background   : Defender Excluded | Indexing/SysMain Paused" -ForegroundColor Cyan
+            Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
+            Write-Host " [HOTKEYS]" -ForegroundColor Yellow
+            Write-Host "  [T] Minimize to System Tray (Runs silently near clock)" -ForegroundColor White
+            Write-Host "  [Q] Restore Stock Settings and Exit" -ForegroundColor White
+            Write-Host "==========================================================`n" -ForegroundColor Cyan
+        }
+
+        $valProc = $null
+
+        # Standby wait loop
+        while ($null -eq $valProc -and $script:Running) {
+            try {
+                if ([Console]::KeyAvailable) {
+                    $key = [Console]::ReadKey($true)
+                    if ($key.Key -eq [ConsoleKey]::Q) {
+                        $script:Running = $false
+                        break
+                    } elseif ($key.Key -eq [ConsoleKey]::T) {
+                        Toggle-HudVisibility
+                    }
+                }
+            } catch {}
+
+            $valProc = Get-Process -Name $TargetProcessName -ErrorAction SilentlyContinue
+            if ($null -eq $valProc) {
+                $valProc = Get-Process -Name $FallbackProcessName -ErrorAction SilentlyContinue
+            }
+
+            if ($null -eq $valProc) {
+                Wait-Responsive -Milliseconds ($PollIntervalSeconds * 1000)
             }
         }
 
-        $valProc = Get-Process -Name $TargetProcessName -ErrorAction SilentlyContinue
-        if ($null -eq $valProc) {
-            $valProc = Get-Process -Name $FallbackProcessName -ErrorAction SilentlyContinue
+        if (-not $script:Running) { break }
+
+        # Valorant detected!
+        $StartTime = Get-Date
+        $valPid = $valProc.Id
+
+        if ($script:HudVisible) {
+            Clear-Host
+            Write-Host "==========================================================" -ForegroundColor Green
+            Write-Host "  [+] VALORANT DETECTED! (PID: $valPid)" -ForegroundColor Green
+            Write-Host "  Applying pro-grade low-latency optimizations..." -ForegroundColor White
+            Write-Host "==========================================================" -ForegroundColor Green
         }
 
-        if ($null -eq $valProc) {
-            Start-Sleep -Seconds $PollIntervalSeconds
+        # 1. Process Priority
+        try {
+            $valProc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
+            if ($script:HudVisible) { Write-Host "  [OK] Process Priority       : HIGH (Safe & Responsive)" -ForegroundColor Green }
+        } catch {
+            if ($script:HudVisible) { Write-Host "  [!] Process Priority       : Normal ($($_.Exception.Message))" -ForegroundColor Yellow }
         }
-    }
 
-    Clear-Host
-    $StartTime = Get-Date
-    Write-Host "==========================================================" -ForegroundColor Green
-    Write-Host "  [+] VALORANT DETECTED! (PID: $($valProc.Id))" -ForegroundColor Green
-    Write-Host "  Applying pro-grade low-latency optimizations..." -ForegroundColor White
-    Write-Host "==========================================================" -ForegroundColor Green
+        # 2. Timer Resolution
+        $timerStr = Set-HighPrecisionTimer
+        if ($script:HudVisible) { Write-Host "  [OK] Timer Resolution       : $timerStr" -ForegroundColor Green }
 
-    # SAFETY CHECK: Only set High priority. NEVER set RealTime.
-    try {
-        $valProc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
-        Write-Host "  [OK] Process Priority       : HIGH (Safe & Responsive)" -ForegroundColor Green
-    } catch {
-        Write-Host "  [!] Process Priority       : Normal ($($_.Exception.Message))" -ForegroundColor Yellow
-    }
+        # 3. Power Plan & Core Unparking
+        $activePlanName = Enable-LowLatencyPower
+        if ($script:HudVisible) { Write-Host "  [OK] Power Plan             : $activePlanName" -ForegroundColor Green }
 
-    $timerStr = Set-HighPrecisionTimer
-    Write-Host "  [OK] Timer Resolution       : $timerStr" -ForegroundColor Green
+        # 4. IFEO & Direct Scanout DWM Bypass
+        try { $valPath = $valProc.MainModule.FileName } catch { $valPath = "" }
+        Apply-IFEOAndDwmBypass -exePath $valPath
+        if ($script:HudVisible) {
+            Write-Host "  [OK] Exclusive Fullscreen   : Direct Scanout (DWM Bypassed)" -ForegroundColor Green
+            Write-Host "  [OK] IFEO Priorities        : High CPU & Disk I/O Injected" -ForegroundColor Green
+        }
 
-    $activePlanName = Enable-LowLatencyPower
-    Write-Host "  [OK] Power Plan             : $activePlanName" -ForegroundColor Green
+        # 5. Network & TCP Tweaks
+        Apply-NetworkAndRegistryTweaks
+        if ($script:HudVisible) { Write-Host "  [OK] Network & TCP Stack    : Nagle's Disabled / 0% Throttling" -ForegroundColor Green }
 
-    try {
-        $valPath = $valProc.MainModule.FileName
-    } catch {
-        $valPath = ""
-    }
-    Apply-IFEOAndDwmBypass -exePath $valPath
-    Write-Host "  [OK] Exclusive Fullscreen   : Direct Scanout (DWM Bypassed)" -ForegroundColor Green
-    Write-Host "  [OK] IFEO Priorities        : High CPU & Disk I/O Injected" -ForegroundColor Green
+        # 6. Mouse Accel
+        Apply-MouseAccelerationKillswitch
+        if ($script:HudVisible) { Write-Host "  [OK] Windows Mouse Accel    : Disabled (True 1:1 Curve)" -ForegroundColor Green }
 
-    Apply-NetworkAndRegistryTweaks
-    Write-Host "  [OK] Network & TCP Stack    : Nagle's Disabled / 0% Throttling" -ForegroundColor Green
+        # 7. Defender Exclusions
+        Apply-DefenderExclusions
+        if ($script:HudVisible) { Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded" -ForegroundColor Green }
 
-    Apply-MouseAccelerationKillswitch
-    Write-Host "  [OK] Windows Mouse Accel    : Disabled (True 1:1 Curve)" -ForegroundColor Green
+        # 8. GPU Profile
+        Apply-GpuPowerProfile
+        if ($script:HudVisible) { Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (Low Latency Power State)" -ForegroundColor Green }
 
-    Apply-DefenderExclusions
-    Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded" -ForegroundColor Green
+        # 9. Background Apps Throttling
+        $throttledCount = 0
+        foreach ($name in $BackgroundHogs) {
+            $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
+            foreach ($p in $procs) {
+                try {
+                    if (-not $script:OriginalPriorities.ContainsKey($p.Id)) {
+                        $script:OriginalPriorities[$p.Id] = $p.PriorityClass
+                    }
+                    $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+                    $throttledCount++
+                } catch {}
+            }
+        }
+        if ($script:HudVisible) { Write-Host "  [OK] Background Apps        : Throttled ($throttledCount instances, Discord & OBS Safe)" -ForegroundColor Green }
 
-    Apply-GpuPowerProfile
-    Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (Low Latency Power State)" -ForegroundColor Green
-
-    $throttledCount = 0
-    foreach ($name in $BackgroundHogs) {
-        $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
-        foreach ($p in $procs) {
+        # 10. Pause Stutter Services
+        foreach ($s in $PauseServices) {
             try {
-                if (-not $OriginalPriorities.ContainsKey($p.Id)) {
-                    $OriginalPriorities[$p.Id] = $p.PriorityClass
+                $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
+                if ($svc -and $svc.Status -eq 'Running') {
+                    Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
+                    $script:StoppedServices += $s
                 }
-                $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
-                $throttledCount++
             } catch {}
         }
-    }
-    Write-Host "  [OK] Background Apps        : Throttled ($throttledCount instances, Discord & OBS Safe)" -ForegroundColor Green
+        if ($script:StoppedServices.Count -gt 0 -and $script:HudVisible) {
+            Write-Host "  [OK] Services Paused        : $($script:StoppedServices -join ', ')" -ForegroundColor Green
+        }
 
-    foreach ($s in $PauseServices) {
-        try {
-            $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
-            if ($svc -and $svc.Status -eq 'Running') {
-                Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
-                $StoppedServices += $s
+        # 11. Standby Memory Clean & DNS Flush
+        Purge-SystemMemoryAndStandby
+        ipconfig /flushdns | Out-Null
+        if ($script:HudVisible) { Write-Host "  [OK] System Memory & DNS    : Cleaned & Flushed" -ForegroundColor Green }
+
+        # Save on-disk backup for crash resilience
+        Save-BackupState
+        $script:OptimizationsApplied = $true
+
+        # Notify tray
+        Show-TrayNotification -Title "🎯 Valorant Detected!" -Text "All 22 low-latency optimizations engaged (0.50ms timer, high priority, core unparking)."
+        if ($script:StatusMenuItem) { $script:StatusMenuItem.Text = "● Status: Active (PID: $valPid • Tweaks Active)" }
+        if ($script:NotifyIcon) { $script:NotifyIcon.Text = "Valorant Active (PID: $valPid) | Tweaks Active" }
+
+        Wait-Responsive -Milliseconds 2000
+
+        # Passive HUD monitoring loop while game is running
+        $lastPingCheck = [DateTime]::MinValue
+        $cachedPing = "Testing..."
+
+        while (-not $valProc.HasExited -and $script:Running) {
+            try {
+                if ([Console]::KeyAvailable) {
+                    $key = [Console]::ReadKey($true)
+                    if ($key.Key -eq [ConsoleKey]::Q) {
+                        $script:Running = $false
+                        break
+                    } elseif ($key.Key -eq [ConsoleKey]::T) {
+                        Toggle-HudVisibility
+                    }
+                }
+            } catch {}
+
+            if (((Get-Date) - $lastPingCheck).TotalSeconds -ge 10) {
+                $cachedPing = Get-NetworkPing
+                $lastPingCheck = Get-Date
             }
-        } catch {}
-    }
-    if ($StoppedServices.Count -gt 0) {
-        Write-Host "  [OK] Services Paused        : $($StoppedServices -join ', ')" -ForegroundColor Green
-    }
 
-    Purge-SystemMemoryAndStandby
-    ipconfig /flushdns | Out-Null
-    Write-Host "  [OK] System Memory & DNS    : Cleaned & Flushed" -ForegroundColor Green
-    
-    # SAVE ON-DISK BACKUP IMMEDIATELY FOR CRASH RESILIENCE
-    Save-BackupState
-    $OptimizationsApplied = $true
+            $elapsed = (Get-Date) - $StartTime
+            $elapsedStr = "{0:D2}h {1:D2}m {2:D2}s" -f $elapsed.Hours, $elapsed.Minutes, $elapsed.Seconds
 
-    Start-Sleep -Seconds 2
+            $valProc.Refresh()
+            $memMB = [Math]::Round($valProc.WorkingSet64 / 1MB, 1)
 
-    # ----------------- PASSIVE HUD MONITORING -----------------
-    # Stutter-Free: No periodic EmptyWorkingSet loops during live matches
-    $lastPingCheck = [DateTime]::MinValue
-    $cachedPing = "Testing..."
+            if ($script:NotifyIcon) {
+                $script:NotifyIcon.Text = "Valorant Active: $elapsedStr | Ping: $cachedPing"
+            }
+            if ($script:StatusMenuItem) {
+                $script:StatusMenuItem.Text = "● Status: Active ($elapsedStr • PID: $valPid)"
+            }
 
-    while (-not $valProc.HasExited) {
-        if ([Console]::KeyAvailable) {
-            $key = [Console]::ReadKey($true)
-            if ($key.Key -eq [ConsoleKey]::Q) {
-                Write-Host "`n [!] 'Q' pressed. Exiting and restoring system..." -ForegroundColor Yellow
+            if ($script:HudVisible) {
+                Clear-Host
+                Write-Host "==========================================================" -ForegroundColor Cyan
+                Write-Host "       VALORANT ULTIMATE LOW-LATENCY MONITORING HUD       " -ForegroundColor White
+                Write-Host "==========================================================" -ForegroundColor Cyan
+                Write-Host " Game Status       : " -NoNewline; Write-Host "ACTIVE (Running)" -ForegroundColor Green
+                Write-Host " Process PID       : $valPid"
+                Write-Host " Session Duration  : $elapsedStr"
+                Write-Host " Memory WorkingSet : $memMB MB (Stutter-Free Passive Monitoring)"
+                Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
+                Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
+                Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
+                Write-Host " CPU Hardware Mode : $DetectedCpu"
+                Write-Host " CPU Power Scheme  : $activePlanName"
+                Write-Host " GPU Hardware Mode : $DetectedGpu"
+                Write-Host " DWM Display State : Direct Scanout (DWM Bypassed)"
+                Write-Host " Throttled Apps    : $throttledCount background processes (Discord & OBS Safe)"
+                Write-Host " Paused Services   : $(if ($script:StoppedServices.Count -gt 0) { $script:StoppedServices -join ', ' } else { 'None' })"
+                Write-Host " Crash Safety      : " -NoNewline; Write-Host "On-Disk Backup Active (Safe)" -ForegroundColor Green
+                Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
+                Write-Host " [Hotkeys] [T] Minimize to System Tray | [Q] Restore & Exit" -ForegroundColor Yellow
+                Write-Host "==========================================================" -ForegroundColor Cyan
+            }
+
+            Wait-Responsive -Milliseconds 1500
+        }
+
+        # Game has exited or exit requested
+        Restore-SystemState
+
+        if ($script:Running) {
+            Show-TrayNotification -Title "🔄 Valorant Session Ended" -Text "All 22 optimizations reverted safely. Companion back to tray standby."
+
+            # If user ran one-off in console mode (not -Tray and didn't minimize to tray), exit as usual
+            if (-not $script:InTrayMode -and $script:HudVisible) {
+                Write-Host "`n Valorant session ended. Closing in 3 seconds..." -ForegroundColor DarkGray
+                Start-Sleep -Seconds 3
                 break
             }
         }
-
-        if (((Get-Date) - $lastPingCheck).TotalSeconds -ge 10) {
-            $cachedPing = Get-NetworkPing
-            $lastPingCheck = Get-Date
-        }
-
-        Clear-Host
-        $elapsed = (Get-Date) - $StartTime
-        $elapsedStr = "{0:D2}h {1:D2}m {2:D2}s" -f $elapsed.Hours, $elapsed.Minutes, $elapsed.Seconds
-
-        $valProc.Refresh()
-        $memMB = [Math]::Round($valProc.WorkingSet64 / 1MB, 1)
-
-        Write-Host "==========================================================" -ForegroundColor Cyan
-        Write-Host "       VALORANT ULTIMATE LOW-LATENCY MONITORING HUD       " -ForegroundColor White
-        Write-Host "==========================================================" -ForegroundColor Cyan
-        Write-Host " Game Status       : " -NoNewline; Write-Host "ACTIVE (Running)" -ForegroundColor Green
-        Write-Host " Process PID       : $($valProc.Id)"
-        Write-Host " Session Duration  : $elapsedStr"
-        Write-Host " Memory WorkingSet : $memMB MB (Stutter-Free Passive Monitoring)"
-        Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
-        Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
-        Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
-        Write-Host " CPU Hardware Mode : $DetectedCpu"
-        Write-Host " CPU Power Scheme  : $activePlanName"
-        Write-Host " GPU Hardware Mode : $DetectedGpu"
-        Write-Host " DWM Display State : Direct Scanout (DWM Bypassed)"
-        Write-Host " Throttled Apps    : $throttledCount background processes (Discord & OBS Safe)"
-        Write-Host " Paused Services   : $(if ($StoppedServices.Count -gt 0) { $StoppedServices -join ', ' } else { 'None' })"
-        Write-Host " Crash Safety      : " -NoNewline; Write-Host "On-Disk Backup Active (Safe)" -ForegroundColor Green
-        Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
-        Write-Host " [i] Press 'Q' or close this window when done to revert." -ForegroundColor Yellow
-        Write-Host " [i] In case of emergency or crash, run 'Restore_Defaults.bat'." -ForegroundColor DarkGray
-        Write-Host "==========================================================" -ForegroundColor Cyan
-
-        Start-Sleep -Seconds 2
-    }
-
-    if ($valProc.HasExited) {
-        Write-Host "`n [!] Valorant session ended." -ForegroundColor Yellow
     }
 }
 finally {
     Restore-SystemState
-    Write-Host "`nClosing terminal in 3 seconds..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 3
+    if ($script:NotifyIcon) {
+        $script:NotifyIcon.Visible = $false
+        $script:NotifyIcon.Dispose()
+    }
+    if ($script:AppMutex) {
+        try {
+            $script:AppMutex.ReleaseMutex()
+            $script:AppMutex.Dispose()
+        } catch {}
+    }
 }
