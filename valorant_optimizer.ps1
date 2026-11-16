@@ -15,7 +15,8 @@ Clear-Host
 # ----------------- CONFIGURATION -----------------
 $TargetProcessName = "VALORANT-Win64-Shipping"
 $FallbackProcessName = "VALORANT"
-$BackgroundHogs = @("chrome", "msedge", "brave", "opera", "discord", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
+# Note: Discord and streaming tools (OBS) are excluded from throttling to ensure 60fps streaming & clean voice chat
+$BackgroundHogs = @("chrome", "msedge", "brave", "opera", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
 $PauseServices = @("WSearch", "SysMain")
 $PollIntervalSeconds = 1
 
