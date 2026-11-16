@@ -15,7 +15,7 @@ exit /b
 #>
 
 # =========================================================================
-# VALORANT ULTIMATE COMPETITIVE LAUNCHER & LOW-LATENCY COMPANION
+# VALORANT ULTIMATE COMPETITIVE PERFORMANCE COMPANION
 # Tailored for AMD Ryzen + NVIDIA RTX 40-Series + 170Hz+ Esports Gaming
 # Vanguard Safe: 100% compliant with Riot Vanguard anti-cheat.
 # =========================================================================
@@ -403,49 +403,6 @@ function Get-NetworkPing {
     return "OK (<15ms)"
 }
 
-function Find-And-Launch-Valorant {
-    Write-Host " [>] Looking for Valorant / Riot Client..." -ForegroundColor Cyan
-
-    $existing = Get-Process -Name $TargetProcessName, $FallbackProcessName -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-Host " [+] Valorant is already active! (PID: $($existing[0].Id))" -ForegroundColor Green
-        return
-    }
-
-    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-    $candidates = @()
-    foreach ($d in $drives) {
-        $candidates += Join-Path $d "Riot Games\Riot Client\RiotClientServices.exe"
-        $candidates += Join-Path $d "Program Files\Riot Games\Riot Client\RiotClientServices.exe"
-        $candidates += Join-Path $d "Program Files (x86)\Riot Games\Riot Client\RiotClientServices.exe"
-    }
-    $candidates += "$env:ProgramData\Riot Games\RiotClientServices.exe"
-
-    foreach ($exe in $candidates) {
-        if (Test-Path $exe) {
-            Write-Host " [+] Found Riot Client at: $exe" -ForegroundColor Green
-            Write-Host " [>] Launching Valorant..." -ForegroundColor Cyan
-            Start-Process -FilePath $exe -ArgumentList "--launch-product=valorant --launch-patchline=live"
-            return
-        }
-    }
-
-    try {
-        Start-Process "riotclient://rso-auth/rides/exist/v1?app-id=valorant&launch-product=valorant&launch-patchline=live" -ErrorAction Stop
-        Write-Host " [+] Launched Valorant via Riot Client protocol." -ForegroundColor Green
-        return
-    } catch {}
-
-    $shortcuts = Get-ChildItem -Path "$env:PUBLIC\Desktop", "$env:USERPROFILE\Desktop", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "*VALORANT*.lnk" -ErrorAction SilentlyContinue
-    if ($shortcuts -and $shortcuts.Count -gt 0) {
-        Write-Host " [+] Found Valorant shortcut: $($shortcuts[0].FullName)" -ForegroundColor Green
-        Start-Process $shortcuts[0].FullName
-        return
-    }
-
-    Write-Host " [!] Please launch Valorant; optimizer will hook automatically!" -ForegroundColor Yellow
-}
-
 # ----------------- CLEANUP / RESTORATION -----------------
 function Restore-SystemState {
     if (-not $script:OptimizationsApplied) { return }
@@ -519,7 +476,7 @@ function Restore-SystemState {
 # ----------------- MAIN RUNTIME -----------------
 try {
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "     VALORANT ULTIMATE LOW-LATENCY LAUNCHER               " -ForegroundColor White
+    Write-Host "     VALORANT ULTIMATE LOW-LATENCY COMPANION              " -ForegroundColor White
     Write-Host "==========================================================" -ForegroundColor Cyan
 
     $OriginalPowerScheme = Get-ActivePowerScheme
@@ -528,10 +485,10 @@ try {
     Clean-StaleCaches
     Audit-ValorantUserSettings
 
-    # 2. Launch Valorant
-    Find-And-Launch-Valorant
-
-    Write-Host "`n [STANDBY] Waiting for Valorant game process to start..." -ForegroundColor Yellow
+    # 2. Standby & Wait for user to launch Valorant
+    Write-Host "`n [STANDBY] Ready and waiting for Valorant to open..." -ForegroundColor Yellow
+    Write-Host " [i] Please launch Valorant whenever you're ready." -ForegroundColor Cyan
+    Write-Host "     (This terminal will automatically detect it and engage all boosts)" -ForegroundColor DarkGray
     Write-Host " (Press 'Q' or 'Ctrl+C' in this terminal at any time to abort)`n" -ForegroundColor DarkGray
 
     $valProc = $null

@@ -1,0 +1,11 @@
+# Agent metadata & skills
+.agent/
+
+# Windows temp/caches
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
