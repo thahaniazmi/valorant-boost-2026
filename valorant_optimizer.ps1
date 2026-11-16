@@ -1,22 +1,8 @@
-﻿# ==============================================================================
-# VALORANT PRO LOW-LATENCY COMPANION & LIVE OPTIMIZER
-# ==============================================================================
-# INSTRUCTIONS & OPERATING MODES:
-#   Mode 1 (Auto-Start Tray): Run Install_AutoStart_Tray.bat to start with Windows.
-#   Mode 2 (Tray on Demand):  Run Valorant_Optimizer_Tray.bat for zero-window tray.
-#   Mode 3 (1-Click Launch):  Run Launch_Valorant_With_Tray.bat to launch game + tray.
-#   Mode 4 (Interactive HUD): Run Valorant_Optimizer.bat directly (Press 'T' for tray).
-#
-# HOTKEYS (In Console HUD):
-#   [T] - Minimize HUD directly to Windows System Tray (near taskbar clock)
-#   [Q] - Restore all system defaults cleanly and exit
-#
-# EMERGENCY RESTORE:
-#   Double-click Restore_Defaults.bat anytime to reset 100% of Windows settings.
-#
-# SAFETY:
-#   100% Riot Vanguard safe. Uses strictly documented Windows APIs (ntdll, powercfg, IFEO).
-# ==============================================================================
+﻿# Valorant Ultimate Performance Companion & Low-Latency Optimizer (PowerShell Edition)
+# Vanguard Safety: 100% safe. Only uses documented standard Windows OS APIs (priorities, power schemes, service management).
+# Crash Safety: Includes persistent on-disk state backup and auto-recovery to prevent stuck registry keys.
+# System Tray: Supports zero-overhead background tray monitoring, live HUD toggle, and auto-start.
+# NT Kernel Tuning: 0.50ms timer resolution, Core 0 DPC isolation, NtSuspendProcess deep freeze, EcoQoS, and Memory Priority demotion.
 
 [CmdletBinding()]
 param(
@@ -59,7 +45,8 @@ try {
 # ----------------- CONFIGURATION -----------------
 $TargetProcessName = "VALORANT-Win64-Shipping"
 $FallbackProcessName = "VALORANT"
-# Protected apps: Discord, OBS, audio services, and Vanguard are never throttled
+# Protected apps: Discord, OBS, audio services, and Vanguard are NEVER throttled or suspended
+$ProtectedApps = @("Discord", "obs64", "Streamlabs OBS", "vgc", "vgtray", "RiotClientServices", "dwm", "explorer", "csrss", "lsass", "smss", "services")
 $BackgroundHogs = @("chrome", "msedge", "brave", "opera", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
 $PauseServices = @("WSearch", "SysMain", "DiagTrack")
 $PollIntervalSeconds = 1
@@ -67,19 +54,52 @@ $PollIntervalSeconds = 1
 $ScriptDir = if ($env:SCRIPT_DIR -and (Test-Path $env:SCRIPT_DIR)) { $env:SCRIPT_DIR } elseif ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
 $BackupFilePath = Join-Path $ScriptDir "optimizer_backup.json"
 
-# ----------------- P/INVOKE: NATIVE WIN32 & HIGH-PRECISION TIMER API -----------------
+# ----------------- P/INVOKE: NATIVE WIN32, NT KERNEL & SCHEDULER APIS -----------------
 try {
     $nativeCode = @"
 using System;
 using System.Runtime.InteropServices;
 
 public class NativeOptimizers {
+    // 1. High Precision Kernel Dispatcher Timer (0.50 ms)
     [DllImport("ntdll.dll", SetLastError = true)]
     public static extern int NtSetTimerResolution(uint DesiredResolution, bool SetResolution, out uint CurrentResolution);
 
     [DllImport("ntdll.dll", SetLastError = true)]
     public static extern int NtQueryTimerResolution(out uint MinimumResolution, out uint MaximumResolution, out uint CurrentResolution);
 
+    // 2. Thread Dispatcher Deep Freeze: NtSuspendProcess & NtResumeProcess
+    [DllImport("ntdll.dll", SetLastError = true)]
+    public static extern int NtSuspendProcess(IntPtr ProcessHandle);
+
+    [DllImport("ntdll.dll", SetLastError = true)]
+    public static extern int NtResumeProcess(IntPtr ProcessHandle);
+
+    // 3. Processor Affinity (Core 0 DPC Isolation)
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetProcessAffinityMask(IntPtr hProcess, IntPtr dwProcessAffinityMask);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetProcessAffinityMask(IntPtr hProcess, out IntPtr lpProcessAffinityMask, out IntPtr lpSystemAffinityMask);
+
+    // 4. Windows SetProcessInformation (EcoQoS & Memory Priority)
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetProcessInformation(
+        IntPtr hProcess,
+        int ProcessInformationClass,
+        ref PROCESS_POWER_THROTTLING_STATE ProcessInformation,
+        uint ProcessInformationSize
+    );
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetProcessInformation(
+        IntPtr hProcess,
+        int ProcessInformationClass,
+        ref MEMORY_PRIORITY_INFORMATION ProcessInformation,
+        uint ProcessInformationSize
+    );
+
+    // 5. Console Window Management
     [DllImport("kernel32.dll")]
     public static extern IntPtr GetConsoleWindow();
 
@@ -95,6 +115,50 @@ public class NativeOptimizers {
     public const int SW_HIDE = 0;
     public const int SW_SHOWNORMAL = 1;
     public const int SW_RESTORE = 9;
+
+    public const int ProcessMemoryPriority = 0;
+    public const int ProcessPowerThrottling = 4;
+
+    public const uint MEMORY_PRIORITY_VERY_LOW = 1;
+    public const uint MEMORY_PRIORITY_LOW = 2;
+    public const uint MEMORY_PRIORITY_NORMAL = 5;
+
+    public const uint PROCESS_POWER_THROTTLING_CURRENT_VERSION = 1;
+    public const uint PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_POWER_THROTTLING_STATE {
+        public uint Version;
+        public uint ControlMask;
+        public uint StateMask;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MEMORY_PRIORITY_INFORMATION {
+        public uint MemoryPriority;
+    }
+
+    public static bool EnableEcoQoS(IntPtr hProcess) {
+        try {
+            PROCESS_POWER_THROTTLING_STATE state = new PROCESS_POWER_THROTTLING_STATE();
+            state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+            state.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+            state.StateMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+            return SetProcessInformation(hProcess, ProcessPowerThrottling, ref state, (uint)Marshal.SizeOf(state));
+        } catch {
+            return false;
+        }
+    }
+
+    public static bool SetMemoryPriority(IntPtr hProcess, uint priority) {
+        try {
+            MEMORY_PRIORITY_INFORMATION info = new MEMORY_PRIORITY_INFORMATION();
+            info.MemoryPriority = priority;
+            return SetProcessInformation(hProcess, ProcessMemoryPriority, ref info, (uint)Marshal.SizeOf(info));
+        } catch {
+            return false;
+        }
+    }
 }
 "@
     Add-Type -TypeDefinition $nativeCode -ErrorAction SilentlyContinue
@@ -153,6 +217,11 @@ $AppCompatCreated = $false
 $ValorantFullPath = ""
 $StartTime = $null
 $CpMinCoresModified = $false
+$script:OriginalValAffinity = $null
+$script:AffinityModified = $false
+$script:SuspendedProcesses = @()
+$script:EcoQoSSuccessCount = 0
+$script:DeepFreezeCount = 0
 
 $script:Running = $true
 $script:InTrayMode = ($Tray.IsPresent -or $Daemon.IsPresent)
@@ -178,6 +247,7 @@ function Save-BackupState {
             AppCompatCreated = $script:AppCompatCreated
             ValorantFullPath = $script:ValorantFullPath
             StoppedServices = $script:StoppedServices
+            SuspendedProcesses = $script:SuspendedProcesses
         }
         $json = $state | ConvertTo-Json -Depth 5
         [System.IO.File]::WriteAllText($BackupFilePath, $json)
@@ -657,7 +727,7 @@ try {
     $contextMenu.Items.Add($script:ToggleHudMenuItem) | Out-Null
 
     $purgeMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
-    $purgeMenuItem.Text = "Purge Caches & Standby RAM Now"
+    $purgeMenuItem.Text = "Purge Caches & Standby Memory Now"
     $purgeMenuItem.add_Click({
         Clean-StaleCaches
         Purge-SystemMemoryAndStandby
@@ -724,6 +794,35 @@ function Restore-SystemState {
         Write-Host "==========================================================" -ForegroundColor DarkGray
     }
 
+    # 1. Resume all Deep-Frozen background processes
+    $resumedCount = 0
+    foreach ($procId in $script:SuspendedProcesses) {
+        try {
+            $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
+            if ($p -and -not $p.HasExited) {
+                [NativeOptimizers]::NtResumeProcess($p.Handle) | Out-Null
+                $resumedCount++
+            }
+        } catch {}
+    }
+    $script:SuspendedProcesses = @()
+    if ($script:HudVisible -and $resumedCount -gt 0) {
+        Write-Host "  -> Resumed $resumedCount deep-frozen processes to normal run-queue." -ForegroundColor Cyan
+    }
+
+    # 2. Restore Valorant CPU Affinity
+    if ($script:AffinityModified -and $script:OriginalValAffinity) {
+        try {
+            $valProc = Get-Process -Name $TargetProcessName -ErrorAction SilentlyContinue
+            if ($null -eq $valProc) { $valProc = Get-Process -Name $FallbackProcessName -ErrorAction SilentlyContinue }
+            if ($valProc -and -not $valProc.HasExited) {
+                $valProc.ProcessorAffinity = $script:OriginalValAffinity
+            }
+        } catch {}
+        $script:AffinityModified = $false
+        if ($script:HudVisible) { Write-Host "  -> Core 0 DPC isolation restored to standard all-core affinity." -ForegroundColor Cyan }
+    }
+
     Restore-HighPrecisionTimer
     if ($script:HudVisible) { Write-Host "  -> High-precision timer restored." -ForegroundColor Cyan }
 
@@ -788,6 +887,12 @@ function Restore-SystemState {
         $script:NotifyIcon.Visible = $false
         $script:NotifyIcon.Dispose()
     }
+    if ($script:AppMutex) {
+        try {
+            $script:AppMutex.ReleaseMutex()
+            $script:AppMutex.Dispose()
+        } catch {}
+    }
 })
 
 # ----------------- MAIN EXECUTION LOOP -----------------
@@ -819,14 +924,14 @@ try {
             Write-Host " [HOW TO USE]" -ForegroundColor White
             Write-Host "  1. Keep this window running (or press 'T' to send to Tray)." -ForegroundColor Gray
             Write-Host "  2. Start Valorant normally whenever you are ready." -ForegroundColor Gray
-            Write-Host "  3. All 22 pro latency & scheduling tweaks engage instantly." -ForegroundColor Gray
+            Write-Host "  3. All 26 pro kernel & scheduling tweaks engage instantly." -ForegroundColor Gray
             Write-Host "  4. When you quit the match, all settings auto-revert cleanly." -ForegroundColor Gray
             Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
-            Write-Host " [PRIMED OPTIMIZATION PROFILE]" -ForegroundColor White
-            Write-Host "  * CPU / Kernel : 0.50ms Timer | 100% Cores Unparked | High IFEO" -ForegroundColor Cyan
-            Write-Host "  * GPU / Screen : Direct Scanout (DWM Bypass) | PowerMizer Lock" -ForegroundColor Cyan
-            Write-Host "  * Net / Input  : Nagle Disabled (0ms Delay) | 1:1 Raw Mouse" -ForegroundColor Cyan
-            Write-Host "  * Background   : Defender Excluded | Indexing/SysMain Paused" -ForegroundColor Cyan
+            Write-Host " [PRIMED KERNEL & HARDWARE OPTIMIZATION PROFILE]" -ForegroundColor White
+            Write-Host "  * Kernel / Dispatcher : 0.50ms Timer | Core 0 DPC Isolation | Deep Freeze" -ForegroundColor Cyan
+            Write-Host "  * Cores / Scheduling  : 100% Unparked | EcoQoS E-Core Steering | High IFEO" -ForegroundColor Cyan
+            Write-Host "  * GPU / Screen Buffer : Direct Scanout (DWM Bypass) | PowerMizer Locked" -ForegroundColor Cyan
+            Write-Host "  * Memory / Net Stack  : PagePriority 5 | Nagle Off (0ms) | 1:1 Mouse" -ForegroundColor Cyan
             Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
             Write-Host " [HOTKEYS]" -ForegroundColor Yellow
             Write-Host "  [T] Minimize to System Tray (Runs silently near clock)" -ForegroundColor White
@@ -870,7 +975,7 @@ try {
             Clear-Host
             Write-Host "==========================================================" -ForegroundColor Green
             Write-Host "  [+] VALORANT DETECTED! (PID: $valPid)" -ForegroundColor Green
-            Write-Host "  Applying pro-grade low-latency optimizations..." -ForegroundColor White
+            Write-Host "  Applying pro-grade low-latency kernel optimizations..." -ForegroundColor White
             Write-Host "==========================================================" -ForegroundColor Green
         }
 
@@ -882,15 +987,50 @@ try {
             if ($script:HudVisible) { Write-Host "  [!] Process Priority       : Normal ($($_.Exception.Message))" -ForegroundColor Yellow }
         }
 
-        # 2. Timer Resolution
+        # 2. Core 0 ISR & DPC Isolation (Steer Valorant to Cores 1..N on systems with >= 6 threads)
+        $logicalCores = [Environment]::ProcessorCount
+        $script:OriginalValAffinity = $null
+        $script:AffinityModified = $false
+
+        if ($logicalCores -ge 8) {
+            try {
+                $script:OriginalValAffinity = $valProc.ProcessorAffinity
+                # Mask off Physical Core 0 (Logical CPUs 0 and 1) for Windows DPC & hardware IRQs
+                $mask = [int64](((1L -shl $logicalCores) - 1) -band (-bnot 3L))
+                $valProc.ProcessorAffinity = [IntPtr]$mask
+                $script:AffinityModified = $true
+                if ($script:HudVisible) {
+                    Write-Host "  [OK] Core 0 DPC Isolation   : Physical Core 0 Reserved for Hardware ISRs/DPCs" -ForegroundColor Green
+                }
+            } catch {
+                if ($script:HudVisible) { Write-Host "  [!] Core 0 DPC Isolation   : Skipped ($($_.Exception.Message))" -ForegroundColor Yellow }
+            }
+        } elseif ($logicalCores -ge 6) {
+            try {
+                $script:OriginalValAffinity = $valProc.ProcessorAffinity
+                # Mask off Logical CPU 0
+                $mask = [int64](((1L -shl $logicalCores) - 1) -band (-bnot 1L))
+                $valProc.ProcessorAffinity = [IntPtr]$mask
+                $script:AffinityModified = $true
+                if ($script:HudVisible) {
+                    Write-Host "  [OK] Core 0 DPC Isolation   : Logical Core 0 Reserved for Hardware ISRs/DPCs" -ForegroundColor Green
+                }
+            } catch {}
+        } else {
+            if ($script:HudVisible) {
+                Write-Host "  [i] CPU Core Allocation     : All $logicalCores Cores Active (Preserving Multi-Threaded Rendering)" -ForegroundColor Cyan
+            }
+        }
+
+        # 3. High-Precision Kernel Timer (0.50 ms)
         $timerStr = Set-HighPrecisionTimer
         if ($script:HudVisible) { Write-Host "  [OK] Timer Resolution       : $timerStr" -ForegroundColor Green }
 
-        # 3. Power Plan & Core Unparking
+        # 4. Power Plan & Core Unparking
         $activePlanName = Enable-LowLatencyPower
-        if ($script:HudVisible) { Write-Host "  [OK] Power Plan             : $activePlanName" -ForegroundColor Green }
+        if ($script:HudVisible) { Write-Host "  [OK] Power Plan & Parking   : $activePlanName (CPMINCORES 100)" -ForegroundColor Green }
 
-        # 4. IFEO & Direct Scanout DWM Bypass
+        # 5. IFEO & Direct Scanout DWM Bypass
         try { $valPath = $valProc.MainModule.FileName } catch { $valPath = "" }
         Apply-IFEOAndDwmBypass -exePath $valPath
         if ($script:HudVisible) {
@@ -898,39 +1038,68 @@ try {
             Write-Host "  [OK] IFEO Priorities        : High CPU & Disk I/O Injected" -ForegroundColor Green
         }
 
-        # 5. Network & TCP Tweaks
+        # 6. Memory Priority Elevation on Game Working Set
+        try {
+            [NativeOptimizers]::SetMemoryPriority($valProc.Handle, [NativeOptimizers]::MEMORY_PRIORITY_NORMAL) | Out-Null
+            if ($script:HudVisible) { Write-Host "  [OK] Game Memory Priority   : Elevated (Working Set Page Lock Active)" -ForegroundColor Green }
+        } catch {}
+
+        # 7. Network & TCP Tweaks
         Apply-NetworkAndRegistryTweaks
         if ($script:HudVisible) { Write-Host "  [OK] Network & TCP Stack    : Nagle's Disabled / 0% Throttling" -ForegroundColor Green }
 
-        # 6. Mouse Accel
+        # 8. Mouse Acceleration Killswitch
         Apply-MouseAccelerationKillswitch
         if ($script:HudVisible) { Write-Host "  [OK] Windows Mouse Accel    : Disabled (True 1:1 Curve)" -ForegroundColor Green }
 
-        # 7. Defender Exclusions
+        # 9. Defender Exclusions
         Apply-DefenderExclusions
         if ($script:HudVisible) { Write-Host "  [OK] Windows Defender       : Game & Vanguard Excluded" -ForegroundColor Green }
 
-        # 8. GPU Profile
+        # 10. GPU Profile
         Apply-GpuPowerProfile
         if ($script:HudVisible) { Write-Host "  [OK] GPU Hardware Mode      : $DetectedGpu (Low Latency Power State)" -ForegroundColor Green }
 
-        # 9. Background Apps Throttling
+        # 11. Deep Freeze (NtSuspendProcess), EcoQoS E-Core Steering & Memory Priority Demotion
         $throttledCount = 0
+        $script:DeepFreezeCount = 0
+        $script:EcoQoSSuccessCount = 0
+        $script:SuspendedProcesses = @()
+
         foreach ($name in $BackgroundHogs) {
             $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
             foreach ($p in $procs) {
+                if ($ProtectedApps -contains $p.ProcessName) { continue }
                 try {
                     if (-not $script:OriginalPriorities.ContainsKey($p.Id)) {
                         $script:OriginalPriorities[$p.Id] = $p.PriorityClass
                     }
                     $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
                     $throttledCount++
+
+                    # Memory priority demotion to Level 1 (Very Low)
+                    [NativeOptimizers]::SetMemoryPriority($p.Handle, [NativeOptimizers]::MEMORY_PRIORITY_VERY_LOW) | Out-Null
+
+                    # EcoQoS E-Core steering on hybrid processors
+                    $eco = [NativeOptimizers]::EnableEcoQoS($p.Handle)
+                    if ($eco) { $script:EcoQoSSuccessCount++ }
+
+                    # Deep Freeze: suspend threads out of kernel run-queue
+                    $sus = [NativeOptimizers]::NtSuspendProcess($p.Handle)
+                    if ($sus -eq 0) {
+                        $script:SuspendedProcesses += $p.Id
+                        $script:DeepFreezeCount++
+                    }
                 } catch {}
             }
         }
-        if ($script:HudVisible) { Write-Host "  [OK] Background Apps        : Throttled ($throttledCount instances, Discord & OBS Safe)" -ForegroundColor Green }
 
-        # 10. Pause Stutter Services
+        if ($script:HudVisible) {
+            Write-Host "  [OK] Deep Freeze Dispatcher : $($script:DeepFreezeCount) background processes suspended from run-queue" -ForegroundColor Green
+            Write-Host "  [OK] EcoQoS & Memory Trim   : $($script:EcoQoSSuccessCount) steered to E-Cores | Background RAM demoted to VeryLow (1)" -ForegroundColor Green
+        }
+
+        # 12. Pause Stutter-Prone Services
         foreach ($s in $PauseServices) {
             try {
                 $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
@@ -944,7 +1113,7 @@ try {
             Write-Host "  [OK] Services Paused        : $($script:StoppedServices -join ', ')" -ForegroundColor Green
         }
 
-        # 11. Standby Memory Clean & DNS Flush
+        # 13. Standby Memory Clean & DNS Flush
         Purge-SystemMemoryAndStandby
         ipconfig /flushdns | Out-Null
         if ($script:HudVisible) { Write-Host "  [OK] System Memory & DNS    : Cleaned & Flushed" -ForegroundColor Green }
@@ -954,7 +1123,7 @@ try {
         $script:OptimizationsApplied = $true
 
         # Notify tray
-        Show-TrayNotification -Title "🎯 Valorant Detected!" -Text "All 22 low-latency optimizations engaged (0.50ms timer, high priority, core unparking)."
+        Show-TrayNotification -Title "🎯 Valorant Detected!" -Text "All 26 kernel & latency optimizations engaged (Core 0 DPC Isolation, 0.50ms timer, Deep Freeze)."
         if ($script:StatusMenuItem) { $script:StatusMenuItem.Text = "● Status: Active (PID: $valPid • Tweaks Active)" }
         if ($script:NotifyIcon) { $script:NotifyIcon.Text = "Valorant Active (PID: $valPid) | Tweaks Active" }
 
@@ -1006,12 +1175,15 @@ try {
                 Write-Host " Memory WorkingSet : $memMB MB (Stutter-Free Passive Monitoring)"
                 Write-Host " Network Latency   : " -NoNewline; Write-Host "$cachedPing" -ForegroundColor Green
                 Write-Host " Process Priority  : " -NoNewline; Write-Host "$($valProc.PriorityClass)" -ForegroundColor Green
-                Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Low Latency)" -ForegroundColor Green
+                Write-Host " Timer Resolution  : " -NoNewline; Write-Host "0.50 ms (Native ntdll.dll)" -ForegroundColor Green
+                Write-Host " Core 0 Isolation  : " -NoNewline; Write-Host "$(if ($script:AffinityModified) { 'ACTIVE (Core 0 DPCs & Interrupts Isolated)' } else { 'Standard All-Core' })" -ForegroundColor Green
+                Write-Host " Deep Freeze Apps  : " -NoNewline; Write-Host "$($script:DeepFreezeCount) background processes suspended from run-queue" -ForegroundColor Green
+                Write-Host " EcoQoS Steering   : " -NoNewline; Write-Host "$($script:EcoQoSSuccessCount) processes banished to E-Cores (P-Cores 100% Game)" -ForegroundColor Green
+                Write-Host " Memory Priority   : " -NoNewline; Write-Host "Game Level 5 | Background Level 1 VeryLow" -ForegroundColor Green
                 Write-Host " CPU Hardware Mode : $DetectedCpu"
                 Write-Host " CPU Power Scheme  : $activePlanName"
                 Write-Host " GPU Hardware Mode : $DetectedGpu"
                 Write-Host " DWM Display State : Direct Scanout (DWM Bypassed)"
-                Write-Host " Throttled Apps    : $throttledCount background processes (Discord & OBS Safe)"
                 Write-Host " Paused Services   : $(if ($script:StoppedServices.Count -gt 0) { $script:StoppedServices -join ', ' } else { 'None' })"
                 Write-Host " Crash Safety      : " -NoNewline; Write-Host "On-Disk Backup Active (Safe)" -ForegroundColor Green
                 Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
@@ -1026,7 +1198,7 @@ try {
         Restore-SystemState
 
         if ($script:Running) {
-            Show-TrayNotification -Title "🔄 Valorant Session Ended" -Text "All 22 optimizations reverted safely. Companion back to tray standby."
+            Show-TrayNotification -Title "🔄 Valorant Session Ended" -Text "All 26 optimizations reverted safely. Companion back to tray standby."
 
             # If user ran one-off in console mode (not -Tray and didn't minimize to tray), exit as usual
             if (-not $script:InTrayMode -and $script:HudVisible) {

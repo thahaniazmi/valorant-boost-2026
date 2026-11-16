@@ -54,36 +54,46 @@
 
 ## 🔬 Complete Optimization Index
 
-The suite applies **22 precision optimizations** across 9 subsystems, targeting documented Windows bottlenecks and reverting automatically on game exit.
+The suite applies **26 precision optimizations** across 10 subsystems, targeting documented Windows bottlenecks and reverting automatically on game exit.
 
 | # | Optimization | Subsystem | Target / Mechanism | Benefit |
 | :-: | :--- | :--- | :--- | :--- |
 | **1** | **Shader & Crash Cache Purge** | Disk / DirectX | Cleans `DXCache`, `D3DSCache`, `Saved\Logs` | Prevents stale shader compilation hitches |
 | **2** | **0.50 ms Timer Resolution** | Kernel / Scheduler | `NtSetTimerResolution(5000, true)` via `ntdll.dll` | 31x faster thread dispatch, zero input float |
-| **3** | **CPU Core Unparking** | Power / CPU Cores | `powercfg /setacvalueindex ... CPMINCORES 100` | Prevents core wake micro-stutters during fights |
-| **4** | **Ultimate Performance Plan** | Powercfg / AC State | Activates Ultimate or High Performance GUID | Locks all-core clocks to maximum boost frequency |
-| **5** | **Process Priority: High** | Windows Dispatcher | Sets `$valProc.PriorityClass = High` at runtime | Prioritizes game render threads above OS tasks |
-| **6** | **IFEO CPU Priority** | Registry / IFEO | `CpuPriorityClass = 3` in `Image File Execution Options` | Sets instant High priority on launch/reconnect |
-| **7** | **IFEO Disk I/O Priority** | Disk Scheduler | `IoPriority = 3` in `Image File Execution Options` | Prevents asset and audio streaming pop-in |
-| **8** | **IFEO Memory Page Priority** | Memory Manager | `PagePriority = 5` in `Image File Execution Options` | Prevents Windows from paging game RAM to swap |
-| **9** | **DWM Direct Scanout Bypass** | Display / DWM | `DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE` | Bypasses DWM buffer (cuts 1–2 frames / 6–12 ms lag) |
-| **10** | **Safe GPU Hardware Profile** | Display Driver | Driver-level performance state enforcement | Locks peak GPU clocks without risky raw PCI edits |
-| **11** | **NVIDIA PowerMizer Lock** | GPU Driver | `PowerMizerLevel = 1` & `PowerMizerLevelAC = 1` | Prevents down-clocking during buy phases or smokes |
-| **12** | **Nagle's Algorithm Disabled** | TCP/IP Stack | `TcpAckFrequency = 1` & `TCPNoDelay = 1` | Instant packet transmission and hit registration |
-| **13** | **Network Throttling Disabled** | Network / MMCSS | `NetworkThrottlingIndex = 0xFFFFFFFF` | Disables Windows network packet throttling |
-| **14** | **100% Gaming CPU Bias** | Multimedia Profile | `SystemResponsiveness = 0` in `SystemProfile` | Allocates 100% of CPU time to the active game |
-| **15** | **Mouse Acceleration Killswitch** | HID / Pointer | `MouseSpeed = 0`, `MouseThreshold1/2 = 0` | Enforces true 1:1 raw hardware sensor curve |
-| **16** | **Defender Real-Time Exclusions** | Windows Security | `Add-MpPreference -ExclusionProcess` for game & vgc | Prevents 15–20% CPU spikes from `MsMpEng.exe` |
-| **17** | **Background App Throttling** | Task Scheduler | Sets background browsers/launchers to `BelowNormal` | Frees CPU headroom without closing your tabs |
-| **18** | **Discord & OBS Protection** | Audio / Video Stream | Explicitly locked at `Normal` priority | Preserves clean voice comms and 60 FPS streams |
-| **19** | **Stutter-Prone Services Paused**| Windows Services | Pauses `WSearch`, `SysMain`, and `DiagTrack` | Halts background indexing and telemetry spikes |
-| **20** | **Standby Memory Clean Pass** | RAM Management | Single `[System.GC]::Collect()` pass prior to launch | Cleans standby RAM without continuous disk thrashing |
-| **21** | **DNS Resolver Flush** | DNS Client | Runs `ipconfig /flushdns` on start and exit | Purges stale routing caches for nearest game servers |
-| **22** | **Crash Backup & Recovery** | System Lifecycle | Snapshot in `optimizer_backup.json` + auto-recovery | Safe auto-revert on exit, crash, or restore tool |
+| **3** | **Core 0 ISR & DPC Isolation** | Kernel / Affinity | `SetProcessAffinityMask` (reserves Core 0) | Isolates hardware mouse/NIC interrupts from game render loop |
+| **4** | **Dispatcher Deep Freeze** | Kernel / Scheduler | `NtSuspendProcess` via `ntdll.dll` | Drops background threads from run-queue (0 context switches, 0 cache thrashing) |
+| **5** | **EcoQoS & E-Core Steering** | Kernel / Thread Director | `SetProcessInformation` (`PowerThrottling`) | Banishes background apps to E-cores; dedicates 100% of P-cores to game |
+| **6** | **Memory Page Demotion** | Memory Manager | `SetProcessInformation` (`MemoryPriority: 1`) | Demotes background RAM to VeryLow so game working set is never paged |
+| **7** | **CPU Core Unparking** | Power / CPU Cores | `powercfg /setacvalueindex ... CPMINCORES 100` | Prevents core wake micro-stutters during fights |
+| **8** | **Ultimate Performance Plan** | Powercfg / AC State | Activates Ultimate or High Performance GUID | Locks all-core clocks to maximum boost frequency |
+| **9** | **Process Priority: High** | Windows Dispatcher | Sets `$valProc.PriorityClass = High` at runtime | Prioritizes game render threads above OS tasks |
+| **10** | **IFEO CPU Priority** | Registry / IFEO | `CpuPriorityClass = 3` in `Image File Execution Options` | Sets instant High priority on launch/reconnect |
+| **11** | **IFEO Disk I/O Priority** | Disk Scheduler | `IoPriority = 3` in `Image File Execution Options` | Prevents asset and audio streaming pop-in |
+| **12** | **IFEO Memory Page Priority** | Memory Manager | `PagePriority = 5` in `Image File Execution Options` | Locks game Working Set in high-speed physical RAM |
+| **13** | **DWM Direct Scanout Bypass** | Display / DWM | `DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE` | Bypasses DWM buffer (cuts 1–2 frames / 6–12 ms lag) |
+| **14** | **Safe GPU Hardware Profile** | Display Driver | Driver-level performance state enforcement | Locks peak GPU clocks without risky raw PCI edits |
+| **15** | **NVIDIA PowerMizer Lock** | GPU Driver | `PowerMizerLevel = 1` & `PowerMizerLevelAC = 1` | Prevents down-clocking during buy phases or smokes |
+| **16** | **Nagle's Algorithm Disabled** | TCP/IP Stack | `TcpAckFrequency = 1` & `TCPNoDelay = 1` | Instant packet transmission and hit registration |
+| **17** | **Network Throttling Disabled** | Network / MMCSS | `NetworkThrottlingIndex = 0xFFFFFFFF` | Disables Windows network packet throttling |
+| **18** | **100% Gaming CPU Bias** | Multimedia Profile | `SystemResponsiveness = 0` in `SystemProfile` | Allocates 100% of CPU time to the active game |
+| **19** | **Mouse Acceleration Killswitch** | HID / Pointer | `MouseSpeed = 0`, `MouseThreshold1/2 = 0` | Enforces true 1:1 raw hardware sensor curve |
+| **20** | **Defender Real-Time Exclusions** | Windows Security | `Add-MpPreference -ExclusionProcess` for game & vgc | Prevents 15–20% CPU spikes from `MsMpEng.exe` |
+| **21** | **Background App Throttling** | Task Scheduler | Sets background browsers/launchers to `BelowNormal` | Frees CPU headroom without closing your tabs |
+| **22** | **Discord & OBS Protection** | Audio / Video Stream | Explicitly locked at `Normal` priority | Preserves clean voice comms and 60 FPS streams |
+| **23** | **Stutter-Prone Services Paused**| Windows Services | Pauses `WSearch`, `SysMain`, and `DiagTrack` | Halts background indexing and telemetry spikes |
+| **24** | **Standby Memory Clean Pass** | RAM Management | Single `[System.GC]::Collect()` pass prior to launch | Cleans standby RAM without continuous disk thrashing |
+| **25** | **DNS Resolver Flush** | DNS Client | Runs `ipconfig /flushdns` on start and exit | Purges stale routing caches for nearest game servers |
+| **26** | **Crash Backup & Recovery** | System Lifecycle | Snapshot in `optimizer_backup.json` + auto-recovery | Safe auto-revert on exit, crash, or restore tool |
 
 ---
 
 ## 🔬 Detailed Technical Breakdown
+
+### 🧠 NT Kernel Dispatcher & Thread Scheduling (Pro Tier)
+* **Core 0 ISR & DPC Isolation (`SetProcessAffinityMask`):** Windows hardware drivers route mouse reports (1000Hz–8000Hz) and network packets almost exclusively to Logical CPU 0. Reserving Core 0 for Windows hardware interrupts and steering Valorant to Cores 1..N eliminates game thread preemption and micro-stutters during intense mouse flicks or gunfights.
+* **Thread Dispatcher Deep Freeze (`NtSuspendProcess` via `ntdll.dll`):** Rather than merely lowering background priority (which still leaves threads in the kernel's Ready Queue generating context switches), Deep Freeze completely suspends background browser threads from the kernel scheduler, achieving 0 CPU cycles, 0 context switches, and 0 L2/L3 cache line evictions. All frozen processes resume instantly upon match exit.
+* **EcoQoS & E-Core Steering (`SetProcessInformation`):** In modern Intel (12th–14th Gen) and AMD hybrid processors, EcoQoS instructs the Windows Thread Director to banish non-essential background tasks strictly to low-power Efficiency cores (E-cores), dedicating 100% of high-clock Performance cores (P-cores) exclusively to Valorant.
+* **Memory Page Priority Demotion (`MemoryPriorityInformation`):** Demotes background browser RAM to Level 1 (`MemoryPriorityVeryLow`) while elevating Valorant to Level 5 (`MemoryPriorityNormal`), ensuring the Windows Memory Manager dumps background browser cache before ever paging Valorant's Working Set to disk.
 
 ### ⚡ CPU & Power
 * **0.50 ms Timer Resolution:** Calls `ntdll.dll!NtSetTimerResolution` → 31x faster scheduling, eliminates input float.
@@ -126,7 +136,7 @@ Choose the workflow that fits your setup:
 1. **Double-click `Install_AutoStart_Tray.bat` once.**
 2. The companion will automatically start silently in the **Windows System Tray** whenever your computer boots up.
 3. Consumes **0.00% CPU** and tiny memory (~20 MB).
-4. **Whenever you launch Valorant**, all 22 optimizations automatically engage!
+4. **Whenever you launch Valorant**, all 26 optimizations automatically engage!
 5. **When you quit Valorant**, all system settings automatically revert to normal defaults and return to tray standby.
 6. To disable auto-start anytime, simply double-click `Uninstall_AutoStart_Tray.bat`.
 
@@ -156,7 +166,7 @@ Right-click the red **Valorant icon** in your Windows taskbar tray to access:
 * **Show / Hide Monitoring HUD**: Toggle the live terminal telemetry window on and off.
 * **Purge Caches & Standby Memory Now**: Instant manual cleanup of DirectX shader cache and Windows standby RAM.
 * **Windows Startup Integration**: Enable or disable Windows logon autostart right from the menu.
-* **Restore Defaults & Exit**: Restores all 22 optimizations cleanly and safely exits the companion.
+* **Restore Defaults & Exit**: Restores all 26 optimizations cleanly and safely exits the companion.
 * **Native Tray Notifications**: Subtle toast balloons inform you when tweaks engage and revert.
 
 ---

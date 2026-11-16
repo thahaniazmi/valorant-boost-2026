@@ -203,8 +203,35 @@ try {
     Write-Host "       [!] Defender cleanup skipped (managed by policy or 3rd-party AV)." -ForegroundColor DarkGray
 }
 
-# 8. BACKGROUND SERVICES
-Write-Host "`n [8/9] Checking Suspended Services..." -ForegroundColor Yellow
+# 8. BACKGROUND SERVICES & THREAD RESUMPTION
+Write-Host "`n [8/9] Checking Suspended Services & Process Run-Queues..." -ForegroundColor Yellow
+if ($backupData -and $backupData.SuspendedProcesses) {
+    try {
+        $nativeResumeCode = @"
+using System;
+using System.Runtime.InteropServices;
+public class EmergencyResume {
+    [DllImport("ntdll.dll", SetLastError = true)]
+    public static extern int NtResumeProcess(IntPtr ProcessHandle);
+}
+"@
+        Add-Type -TypeDefinition $nativeResumeCode -ErrorAction SilentlyContinue
+        $resumedCount = 0
+        foreach ($pId in $backupData.SuspendedProcesses) {
+            try {
+                $proc = Get-Process -Id $pId -ErrorAction SilentlyContinue
+                if ($proc -and -not $proc.HasExited) {
+                    [EmergencyResume]::NtResumeProcess($proc.Handle) | Out-Null
+                    $resumedCount++
+                }
+            } catch {}
+        }
+        if ($resumedCount -gt 0) {
+            Write-Host "       [OK] Resumed $resumedCount background processes to normal run-queue." -ForegroundColor Green
+        }
+    } catch {}
+}
+
 $servicesToEnsure = @("SysMain", "WSearch", "DiagTrack")
 foreach ($svc in $servicesToEnsure) {
     try {
