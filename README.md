@@ -52,23 +52,6 @@
 
 ---
 
-## 📊 Performance Expectations & Benchmark Target
-
-> *Benchmarks captured on modern mid-range gaming hardware (8-Core CPU + Dedicated GPU on 144Hz/165Hz display). Results scale across Intel Core, AMD Ryzen, NVIDIA, and AMD Radeon.*
-
-| Metric | Stock Windows (Before) | With Companion (After) | Impact |
-| :--- | :--- | :--- | :--- |
-| **Worst Frame Drops (Executes/Smokes)** | **Drops to 50–70 FPS** ⚠️ | **Holds ~160–185+ FPS** 🟢 | **+200% Higher 1% Lows** |
-| **Average Uncapped Framerate** | ~130 – 200 FPS | **~240 – 320+ FPS** | **+50% Higher Peak FPS** |
-| **Display Sync on High-Refresh Screens** | Screen tearing & drops below refresh | **Maintains high refresh rate target** | Minimizes dropped frames and tearing |
-| **Click-to-Photon Input Latency** | ~25 ms – 35 ms *(Floaty)* | **~6 ms – 9 ms** *(Esports-grade)* | **~70% Less Input Lag** |
-| **Windows System Timer** | 15.6 ms *(Windows default)* | **0.50 ms** *(Native High-Precision)* | 31x faster thread dispatching |
-| **Desktop Window Manager (DWM)** | 1–2 buffered frames of lag | **0 frames (Direct Scanout)** | Direct GPU scanout to display panel |
-| **Hit Registration / Peeker Desync** | Ghost bullets during spikes | **Synchronized & Immediate** | TCP Nagle delay bypassed |
-| **Discord 60 FPS Screenshares** | Dropped stream frames | **Smooth 60 FPS for viewers** | Discord priority protected |
-
----
-
 ## 🔬 Complete Optimization Index
 
 The suite applies **22 precision optimizations** across 9 subsystems, targeting documented Windows bottlenecks and reverting automatically on game exit.
