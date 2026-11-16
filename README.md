@@ -85,16 +85,6 @@ The suite applies **22 precision optimizations** across 9 subsystems, targeting 
 
 ## 🔬 Detailed Technical Breakdown
 
-```mermaid
-flowchart LR
-    A[Launch / Match Start] --> B[Purge Shader Caches]
-    B --> C[Inject IFEO & 0.5ms Timer]
-    C --> D[DWM Bypass & Network Tune]
-    D --> E[In-Match: Peak 1% Lows & Sub-ms Input]
-    E --> F[Exit / Crash]
-    F --> G[Auto-Restore Baseline via JSON]
-```
-
 ### ⚡ CPU & Power
 * **0.50 ms Timer Resolution:** Calls `ntdll.dll!NtSetTimerResolution` → 31x faster scheduling, eliminates input float.
 * **Disable Core Parking:** Sets `CPMINCORES = 100` via `powercfg` → Keeps 100% of cores awake to stop C-state wake stutters.
