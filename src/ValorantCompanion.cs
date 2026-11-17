@@ -607,7 +607,6 @@ namespace ValorantCompanionApp {
         private TextBlock _txtRamStats;
         private TextBlock _txtGpuStats;
         private TextBlock _txtTimerStats;
-        private TextBlock _txtCpuStats;
         private System.Windows.Controls.CheckBox _chkGpuLock;
         private Canvas _graphCanvas;
         private System.Windows.Controls.ListBox _lstApps;
@@ -624,7 +623,7 @@ namespace ValorantCompanionApp {
         public WpfDashboardWindow(OptimizationEngine engine) {
             _engine = engine;
 
-            this.Title = "Valorant & Esports Low-Latency Companion (Native WPF)";
+            this.Title = "Valorant Low-Latency Companion";
             this.Width = 880;
             this.Height = 640;
             this.MinWidth = 880;
@@ -671,13 +670,13 @@ namespace ValorantCompanionApp {
 
             StackPanel titlePanel = new StackPanel();
             TextBlock lblTitle = new TextBlock {
-                Text = "⚡ VALORANT & ESPORTS COMPANION",
+                Text = "VALORANT COMPANION",
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 70, 85)) // Valorant Crimson
             };
             TextBlock lblSubtitle = new TextBlock {
-                Text = "Compiled Native .NET WPF Engine • Real GPU Hardware Boost Lock • Multi-Game Auto-Detect",
+                Text = "Lightweight background utility for lower input latency and steady frametimes.",
                 FontSize = 11,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184))
             };
@@ -844,19 +843,19 @@ namespace ValorantCompanionApp {
         }
 
         private TabItem CreateGameProfilesTab() {
-            TabItem tab = new TabItem { Header = "  🎮 Supported Games (Esports Auto-Detect)  " };
+            TabItem tab = new TabItem { Header = "  🎮 Supported Games  " };
             Border border = CreateCardBorder();
             border.Margin = new Thickness(10);
             StackPanel mainPanel = new StackPanel { Margin = new Thickness(15) };
 
             TextBlock lblHeader = new TextBlock {
-                Text = "UNIVERSAL ESPORTS GAME PROFILES",
+                Text = "SUPPORTED GAME PROFILES",
                 FontWeight = FontWeights.Bold,
                 FontSize = 13,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 70, 85))
             };
             TextBlock lblDesc = new TextBlock {
-                Text = "The companion automatically detects whenever ANY of these games launch and applies 0.50ms timer, Core 0 isolation, and GPU lock.",
+                Text = "The companion automatically detects whenever these games launch and applies timer resolution, Core 0 isolation, and power settings.",
                 FontSize = 11,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
                 Margin = new Thickness(0, 4, 0, 10)
@@ -1043,13 +1042,17 @@ namespace ValorantCompanionApp {
 
         private void SetupTray() {
             _trayIcon = new NotifyIcon {
-                Text = "Valorant & Esports Companion: Standby",
+                Text = "Valorant Companion: Standby",
                 Visible = true
             };
 
             try {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string iconPath = System.IO.Path.Combine(baseDir, @"assets\valorant_tray.ico");
+                if (!File.Exists(iconPath)) {
+                    string parent = Directory.GetParent(baseDir) != null ? Directory.GetParent(baseDir).FullName : baseDir;
+                    iconPath = System.IO.Path.Combine(parent, @"assets\valorant_tray.ico");
+                }
                 if (!File.Exists(iconPath)) {
                     iconPath = System.IO.Path.Combine(Directory.GetCurrentDirectory(), @"assets\valorant_tray.ico");
                 }
@@ -1215,6 +1218,10 @@ namespace ValorantCompanionApp {
             string scriptDir = AppDomain.CurrentDomain.BaseDirectory;
             string configPath = System.IO.Path.Combine(scriptDir, "config.json");
             if (!File.Exists(configPath)) {
+                string parent = Directory.GetParent(scriptDir) != null ? Directory.GetParent(scriptDir).FullName : scriptDir;
+                configPath = System.IO.Path.Combine(parent, "config.json");
+            }
+            if (!File.Exists(configPath)) {
                 configPath = System.IO.Path.Combine(Directory.GetCurrentDirectory(), "config.json");
             }
 
@@ -1239,11 +1246,22 @@ namespace ValorantCompanionApp {
                 return;
             }
 
-            bool createdNew;
-            using (Mutex mutex = new Mutex(true, "Global\\ValorantCompanion_SingleInstance_Mutex", out createdNew)) {
+            bool createdNew = true;
+            Mutex mutex = null;
+            try {
+                mutex = new Mutex(true, "Global\\ValorantCompanion_SingleInstance_Mutex", out createdNew);
+            } catch {
+                try {
+                    mutex = new Mutex(true, "ValorantCompanion_SingleInstance_Mutex", out createdNew);
+                } catch {
+                    createdNew = true;
+                }
+            }
+
+            using (mutex) {
                 if (!createdNew) {
                     if (openGui) {
-                        IntPtr existingHwnd = NativeMethods.FindWindow(null, "Valorant & Esports Low-Latency Companion (Native WPF)");
+                        IntPtr existingHwnd = NativeMethods.FindWindow(null, "Valorant Low-Latency Companion");
                         if (existingHwnd != IntPtr.Zero) {
                             NativeMethods.ShowWindow(existingHwnd, 9); // SW_RESTORE
                             NativeMethods.SetForegroundWindow(existingHwnd);

@@ -1,6 +1,7 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "ROOT_DIR=%~dp0.."
+cd /d "%ROOT_DIR%"
 
 :: Elevate to Administrator if not already elevated
 net session >nul 2>&1
@@ -10,16 +11,16 @@ if %errorlevel% neq 0 (
     if %errorlevel% neq 0 (
         echo.
         echo [X] Administrator privileges were not granted or UAC prompt was dismissed.
-        echo     Please right-click 'Install_AutoStart_Tray.bat' and select 'Run as administrator'.
+        echo     Please right-click and select 'Run as administrator'.
         echo.
         pause
     )
     exit /b
 )
 
-title Valorant Optimizer - Install System Tray Auto-Start
+title Valorant Companion - Install Auto-Start Task
 echo ==========================================================
-echo   VALORANT COMPANION - SYSTEM TRAY AUTO-START INSTALLER
+echo        VALORANT COMPANION - AUTO-START INSTALLER
 echo ==========================================================
 echo.
 echo Installing elevated Windows Scheduled Task...
@@ -27,24 +28,23 @@ echo This configures the companion to start silently in your
 echo Windows System Tray on login with 0%% CPU overhead.
 echo.
 
-:: Ensure native binary is compiled
-if not exist "%~dp0ValorantCompanion.exe" (
-    if exist "%~dp0bin\ValorantCompanion.exe" (
-        copy /y "%~dp0bin\ValorantCompanion.exe" "%~dp0ValorantCompanion.exe" >nul
+set "TARGET_EXE=%ROOT_DIR%\ValorantCompanion.exe"
+if not exist "%TARGET_EXE%" (
+    if exist "%ROOT_DIR%\bin\ValorantCompanion.exe" (
+        copy /y "%ROOT_DIR%\bin\ValorantCompanion.exe" "%TARGET_EXE%" >nul
     ) else if exist "%~dp0build.bat" (
-        echo [i] Compiling native companion binary...
+        echo [i] Compiling companion binary...
         call "%~dp0build.bat"
     )
 )
 
-set "TARGET_EXE=%~dp0ValorantCompanion.exe"
 if not exist "%TARGET_EXE%" (
-    echo [X] Error: %TARGET_EXE% not found.
+    echo [X] Error: Could not locate or build %TARGET_EXE%.
     pause
     exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$a = New-ScheduledTaskAction -Execute '%TARGET_EXE%' -WorkingDirectory '%~dp0'; $t = New-ScheduledTaskTrigger -AtLogOn; $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\$env:USERNAME\" -RunLevel Highest; $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; Register-ScheduledTask -TaskName 'ValorantOptimizerTray' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; if ($?) { Write-Host '  [+] SUCCESS: Windows Scheduled Task registered!' -ForegroundColor Green } else { exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$a = New-ScheduledTaskAction -Execute '%TARGET_EXE%' -WorkingDirectory '%ROOT_DIR%'; $t = New-ScheduledTaskTrigger -AtLogOn; $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\$env:USERNAME\" -RunLevel Highest; $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; Register-ScheduledTask -TaskName 'ValorantOptimizerTray' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; if ($?) { Write-Host '  [+] SUCCESS: Windows Scheduled Task registered!' -ForegroundColor Green } else { exit 1 }"
 
 if %errorlevel% equ 0 (
     echo.
@@ -74,4 +74,4 @@ echo  [+] Configured to auto-start on Windows login.
 echo.
 echo Setup is complete! Press any key to exit...
 pause >nul
-exit /b
+exit /b 0

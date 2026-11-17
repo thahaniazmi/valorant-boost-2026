@@ -135,28 +135,22 @@ Applies a collection of small Windows optimizations when the game starts, then p
 
 ## 🎮 How to Use
 
-### Mode 1: Quick Launch in System Tray (Default & Recommended)
-* **Double-click `run.bat`** (or `ValorantCompanion.exe`).
-* **Always starts directly in the Windows System Tray** by default.
-  * Zero messy command prompt windows staying open.
-  * Sits quietly near your Windows clock with **0% CPU** and **~12 MB RAM**.
-  * Tweaks engage automatically when Valorant (or other supported esports games) launches, and restore when you exit.
-  * **Double-click the tray icon** (or right-click -> **Open Dashboard**) anytime to view the live GUI.
-  * To open the dashboard immediately on launch: run `run.bat --gui` (or `Valorant_Optimizer_GUI.bat`).
+### Quick Launch
+* **Double-click `Valorant_Optimizer.bat`** (or `run.bat`).
+  * By default, it quietly starts into the **Windows System Tray** after 3 seconds (or immediately if you press Enter).
+  * Uses essentially 0% CPU and very little memory (~12 MB).
+  * Tweaks engage automatically when Valorant starts, and revert cleanly when you exit.
+  * **Double-click the tray icon** (or right-click -> **Open Dashboard**) anytime to view telemetry and settings.
+  * Interactive menu options when clicking the bat:
+    * `[1]` Start in System Tray (Default)
+    * `[2]` Open Dashboard directly
+    * `[3]` Launch Companion + Valorant together
+    * `[4]` Configure Windows logon auto-start
+    * `[5]` Restore stock defaults & exit
 
-### Mode 2: Windows Startup Integration (Automatic On Logon)
-1. **Double-click `Install_AutoStart_Tray.bat` once.**
-2. Configures an elevated Windows Scheduled Task that launches the native companion directly into the system tray at Windows logon.
-3. Completely silent: zero UAC prompts at logon, zero flashing terminal windows.
-4. To remove auto-start: double-click `Uninstall_AutoStart_Tray.bat`.
-
-### Mode 3: One-Click Game Launcher
-* Double-click **`Launch_Valorant_With_Tray.bat`**.
-* Starts the companion in the tray and launches Valorant together. Feel free to place a shortcut of this on your desktop.
-
-### Mode 4: Restore Defaults Anytime
-* Double-click **`Restore_Defaults.bat`** (or right-click the tray icon -> **Restore Defaults & Exit**).
-* Restores stock power plan, resets GPU hardware clocks, reverts timer resolution, and unfreezes background apps.
+### Restore Defaults Anytime
+* **Double-click `Restore_Defaults.bat`** (or right-click the tray icon -> **Restore Defaults & Exit**).
+* Resets power plans, GPU clocks, timer resolution, and unfreezes background processes.
 
 ---
 
@@ -165,18 +159,18 @@ Applies a collection of small Windows optimizations when the game starts, then p
 Right-click the **Valorant icon** in your taskbar tray:
 
 * **● Status**: Shows whether it's waiting, paused, or currently active in a match.
-* **Show Dashboard**: Open the interactive GUI with live memory graph.
-* **Purge RAM & Caches [Ctrl+Alt+O]**: Instant manual cleanup.
-* **Pause for 30 Minutes / 1 Hour**: Temporarily pause optimizations while working or browsing.
-* **Resume Optimizations**: Immediately resume watchdog mode.
-* **Windows Startup Integration**: Toggle login auto-start directly.
-* **Restore Defaults & Exit**: Restores stock Windows settings, resets GPU clocks, and exits.
+* **Open Dashboard**: Opens the dashboard with live telemetry and settings.
+* **Purge RAM & Caches [Ctrl+Alt+O]**: Quick manual cleanup.
+* **Pause for 30 Minutes / 1 Hour**: Temporarily pause optimizations while browsing or working.
+* **Resume Optimizations**: Immediately resumes watchdog mode.
+* **Edit Config (config.json)**: Opens config in Notepad.
+* **Restore Defaults & Exit**: Restores stock Windows settings and exits.
 
 ---
 
 ## ⚙️ Configuration (`config.json`)
 
-All processes, hotkeys, and GPU parameters are completely customizable in `config.json`:
+All processes, hotkeys, and GPU parameters can be customized in `config.json`:
 
 ```json
 {
@@ -198,28 +192,33 @@ All processes, hotkeys, and GPU parameters are completely customizable in `confi
 
 ---
 
-## 📁 Files
+## 📁 Repository Structure
 
-| File | Description |
-| :--- | :--- |
-| **`ValorantCompanion.exe`** | Compiled native C# / .NET 8 binary (~12 MB RAM, QuickEdit immune, asynchronous engine). |
-| **`Valorant_Optimizer_GUI.bat`**| Launches the interactive GUI Dashboard with live memory graph and process customizer. |
-| **`Valorant_Optimizer_Tray.bat`** | Runs the companion directly in the tray with 0% CPU overhead. |
-| **`Install_AutoStart_Tray.bat`** | Adds a logon task to start the tray companion on boot. |
-| **`Uninstall_AutoStart_Tray.bat`** | Removes the logon task cleanly. |
-| **`Launch_Valorant_With_Tray.bat`**| Starts the tray companion and opens Valorant together. |
-| **`Valorant_Optimizer.bat`** | Runs the interactive console HUD (press `T` to send to tray). |
-| **`build.bat`** | 1-click compiler: builds `src/ValorantCompanion.cs` into `bin/ValorantCompanion.exe`. |
-| **`src/ValorantCompanion.cs`** | Full C# source code for the native dashboard, GPU clock locking, and NT kernel engine. |
-| **`config.json`** | Customizable configuration for processes to freeze, hotkeys, and GPU clock locking. |
-| **`Restore_Defaults.bat`** | Resets all settings, GPU clocks (`nvidia-smi -rgc`), and power plans back to defaults. |
-| **`restore_defaults.ps1`** | PowerShell restore script. |
-| **`README.md`** | Setup guide and reference. |
+```
+valorant-optimize/
+├── Valorant_Optimizer.bat    # Main launcher (Tray, Dashboard, Game, Auto-Start)
+├── Restore_Defaults.bat      # 1-click reset to stock Windows defaults
+├── run.bat                   # Quick alias for Valorant_Optimizer.bat
+├── ValorantCompanion.exe     # Compiled native companion engine
+├── config.json               # User configuration file
+├── README.md                 # Setup guide and documentation
+├── LICENSE                   # Open source license
+├── assets/                   # Tray icons and media
+├── bin/                      # Binary build directory
+├── src/                      # C# source code
+└── scripts/                  # Auxiliary scripts
+    ├── build.bat             # Compiles src/ValorantCompanion.cs
+    ├── Install_AutoStart.bat # Configures Windows logon scheduled task
+    ├── Uninstall_AutoStart.bat # Removes Windows logon scheduled task
+    ├── Launch_Valorant.bat   # Starts companion and launches game
+    ├── valorant_optimizer.ps1# PowerShell companion engine
+    └── restore_defaults.ps1  # PowerShell restore engine
+```
 
 ---
 
 <div align="center">
 
-**Native performance. Real hardware clock lock. True control.**
+**Just a simple setup to keep things running smoothly. Hope it helps.**
 
 </div>

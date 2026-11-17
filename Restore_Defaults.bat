@@ -12,28 +12,35 @@ if %errorlevel% neq 0 (
         echo [X] Administrator privileges were not granted or UAC prompt was dismissed.
         echo     Please right-click 'Restore_Defaults.bat' and select 'Run as administrator'.
         echo.
-        pause
+        timeout /t 4 >nul 2>&1 || pause
     )
     exit /b
 )
 
 title Restore Windows Defaults
+cls
 echo ==========================================================
 echo       RESTORING STOCK WINDOWS & HARDWARE DEFAULTS
 echo ==========================================================
 echo.
 
 :: 1. Revert via native companion if available
-if exist "%~dp0ValorantCompanion.exe" (
+set "EXE=%~dp0ValorantCompanion.exe"
+if not exist "%EXE%" set "EXE=%~dp0bin\ValorantCompanion.exe"
+
+if exist "%EXE%" (
     echo [1/2] Reverting driver locks and companion engine...
-    "%~dp0ValorantCompanion.exe" --restore
+    "%EXE%" --restore
     taskkill /f /im ValorantCompanion.exe >nul 2>&1
 )
 
 :: 2. Run PowerShell restore script as secondary safety check
-if exist "%~dp0restore_defaults.ps1" (
+set "RESTORE_PS=%~dp0scripts\restore_defaults.ps1"
+if not exist "%RESTORE_PS%" set "RESTORE_PS=%~dp0restore_defaults.ps1"
+
+if exist "%RESTORE_PS%" (
     echo [2/2] Running full system restore script...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0restore_defaults.ps1"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%RESTORE_PS%"
 )
 
 echo.
@@ -41,5 +48,5 @@ echo ==========================================================
 echo  [+] SUCCESS: All stock defaults restored cleanly!
 echo ==========================================================
 echo.
-pause
+timeout /t 5 >nul 2>&1 || pause
 exit /b 0

@@ -1,6 +1,7 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "ROOT_DIR=%~dp0.."
+cd /d "%ROOT_DIR%"
 
 :: Elevate to Administrator if not already elevated
 net session >nul 2>&1
@@ -10,7 +11,7 @@ if %errorlevel% neq 0 (
     if %errorlevel% neq 0 (
         echo.
         echo [X] Administrator privileges were not granted or UAC prompt was dismissed.
-        echo     Please right-click 'Uninstall_AutoStart_Tray.bat' and select 'Run as administrator'.
+        echo     Please right-click and select 'Run as administrator'.
         echo.
         pause
     )
@@ -19,7 +20,7 @@ if %errorlevel% neq 0 (
 
 title Valorant Companion - Remove Auto-Start Task
 echo ==========================================================
-echo   VALORANT COMPANION - REMOVE SYSTEM TRAY AUTO-START
+echo        VALORANT COMPANION - REMOVE AUTO-START
 echo ==========================================================
 echo.
 echo Removing scheduled task 'ValorantOptimizerTray'...
@@ -32,4 +33,4 @@ echo      The companion will no longer start automatically at logon.
 echo.
 echo Press any key to exit...
 pause >nul
-exit /b
+exit /b 0

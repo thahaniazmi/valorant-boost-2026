@@ -1,10 +1,11 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "ROOT_DIR=%~dp0.."
+cd /d "%ROOT_DIR%"
 title Build Valorant Companion
 
 echo ==========================================================
-echo    BUILDING VALORANT COMPANION (NATIVE C# WPF BINARY)
+echo        BUILDING VALORANT LOW-LATENCY COMPANION
 echo ==========================================================
 echo.
 
@@ -32,8 +33,8 @@ echo.
 echo ==========================================================
 echo  [+] SUCCESS: ValorantCompanion.exe compiled cleanly!
 echo ==========================================================
-echo  Binary Location : %~dp0ValorantCompanion.exe
-echo  Memory Overhead : ~12-15 MB RAM [vs 100MB+ in PowerShell]
+echo  Binary Location : %CD%\ValorantCompanion.exe
+echo  Memory Overhead : ~12-15 MB RAM
 echo  Default Mode    : System Tray [Standby 0%% CPU]
 echo ==========================================================
 exit /b 0
