@@ -45,7 +45,7 @@
     "DiagTrack"
   ],
   "gpuClockLock": {
-    "enabled": true,
+    "enabled": false,
     "targetClockMhz": 0,
     "lockMinMax": true
   },
