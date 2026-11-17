@@ -1254,9 +1254,36 @@ namespace ValorantCompanionApp {
 
     // ----------------- PROGRAM ENTRY POINT -----------------
     static class Program {
+        private static bool IsAdministrator() {
+            try {
+                using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent()) {
+                    var principal = new System.Security.Principal.WindowsPrincipal(identity);
+                    return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                }
+            } catch {
+                return false;
+            }
+        }
+
         [STAThread]
         static void Main(string[] args) {
             NativeMethods.DisableConsoleQuickEdit();
+
+            // Native Instant UAC Self-Elevation
+            if (!IsAdministrator()) {
+                try {
+                    var psi = new ProcessStartInfo {
+                        FileName = Process.GetCurrentProcess().MainModule.FileName,
+                        Arguments = string.Join(" ", args),
+                        Verb = "runas",
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
+                    return;
+                } catch {
+                    return; // User dismissed UAC prompt
+                }
+            }
 
             string scriptDir = AppDomain.CurrentDomain.BaseDirectory;
             string configPath = System.IO.Path.Combine(scriptDir, "config.json");
