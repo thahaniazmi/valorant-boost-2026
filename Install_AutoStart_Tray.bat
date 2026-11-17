@@ -6,26 +6,45 @@ cd /d "%~dp0"
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Requesting Administrator privileges to register startup task...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+    if %errorlevel% neq 0 (
+        echo.
+        echo [X] Administrator privileges were not granted or UAC prompt was dismissed.
+        echo     Please right-click 'Install_AutoStart_Tray.bat' and select 'Run as administrator'.
+        echo.
+        pause
+    )
     exit /b
 )
 
 title Valorant Optimizer - Install System Tray Auto-Start
 echo ==========================================================
-echo   VALORANT OPTIMIZER - SYSTEM TRAY AUTO-START INSTALLER
+echo   VALORANT COMPANION - SYSTEM TRAY AUTO-START INSTALLER
 echo ==========================================================
 echo.
 echo Installing elevated Windows Scheduled Task...
 echo This configures the companion to start silently in your
 echo Windows System Tray on login with 0%% CPU overhead.
 echo.
-echo Whenever you launch Valorant, optimizations will engage
-echo automatically. When you exit Valorant, defaults are restored!
-echo.
 
-set "TARGET_BAT=%~dp0Valorant_Optimizer_Tray.bat"
+:: Ensure native binary is compiled
+if not exist "%~dp0ValorantCompanion.exe" (
+    if exist "%~dp0bin\ValorantCompanion.exe" (
+        copy /y "%~dp0bin\ValorantCompanion.exe" "%~dp0ValorantCompanion.exe" >nul
+    ) else if exist "%~dp0build.bat" (
+        echo [i] Compiling native companion binary...
+        call "%~dp0build.bat"
+    )
+)
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$a = New-ScheduledTaskAction -Execute '%TARGET_BAT%'; $t = New-ScheduledTaskTrigger -AtLogOn; $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\$env:USERNAME\" -RunLevel Highest; $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; Register-ScheduledTask -TaskName 'ValorantOptimizerTray' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; if ($?) { Write-Host '  [+] SUCCESS: Windows Scheduled Task registered!' -ForegroundColor Green } else { exit 1 }"
+set "TARGET_EXE=%~dp0ValorantCompanion.exe"
+if not exist "%TARGET_EXE%" (
+    echo [X] Error: %TARGET_EXE% not found.
+    pause
+    exit /b 1
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$a = New-ScheduledTaskAction -Execute '%TARGET_EXE%' -WorkingDirectory '%~dp0'; $t = New-ScheduledTaskTrigger -AtLogOn; $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\$env:USERNAME\" -RunLevel Highest; $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; Register-ScheduledTask -TaskName 'ValorantOptimizerTray' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; if ($?) { Write-Host '  [+] SUCCESS: Windows Scheduled Task registered!' -ForegroundColor Green } else { exit 1 }"
 
 if %errorlevel% equ 0 (
     echo.
@@ -33,12 +52,13 @@ if %errorlevel% equ 0 (
     echo  [OK] Task Name : ValorantOptimizerTray
     echo  [OK] Trigger   : At Windows User Logon
     echo  [OK] Privilege : Highest (Administrator - No UAC popups)
-    echo  [OK] Target    : %TARGET_BAT%
+    echo  [OK] Target    : %TARGET_EXE%
+    echo  [OK] Mode      : Silent System Tray (0%% CPU Standby)
     echo ----------------------------------------------------------
 ) else (
     echo.
     echo [!] Falling back to schtasks command line...
-    schtasks /create /tn "ValorantOptimizerTray" /tr "\"%TARGET_BAT%\"" /sc onlogon /rl highest /f
+    schtasks /create /tn "ValorantOptimizerTray" /tr "\"%TARGET_EXE%\"" /sc onlogon /rl highest /f
     if %errorlevel% equ 0 (
         echo  [+] Task created successfully via schtasks!
     ) else (
@@ -48,7 +68,7 @@ if %errorlevel% equ 0 (
 
 echo.
 echo Launching companion in the system tray for this session...
-start "" "%TARGET_BAT%"
+start "" "%TARGET_EXE%"
 echo  [+] Active now: Look for the Valorant icon in your system tray.
 echo  [+] Configured to auto-start on Windows login.
 echo.

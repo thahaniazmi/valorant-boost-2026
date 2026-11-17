@@ -1,0 +1,61 @@
+{
+  "supportedGames": [
+    { "name": "VALORANT", "processes": ["VALORANT-Win64-Shipping", "VALORANT"], "enabled": true },
+    { "name": "Counter-Strike 2", "processes": ["cs2"], "enabled": true },
+    { "name": "Apex Legends", "processes": ["r5apex"], "enabled": true },
+    { "name": "Fortnite", "processes": ["FortniteClient-Win64-Shipping"], "enabled": true },
+    { "name": "Overwatch 2", "processes": ["Overwatch"], "enabled": true },
+    { "name": "Call of Duty", "processes": ["cod", "bootstrapper"], "enabled": true },
+    { "name": "Rainbow Six Siege", "processes": ["RainbowSix", "RainbowSix_Vulkan"], "enabled": true },
+    { "name": "The Finals", "processes": ["Discovery"], "enabled": true },
+    { "name": "Marvel Rivals", "processes": ["MarvelRivals"], "enabled": true },
+    { "name": "League of Legends", "processes": ["League of Legends"], "enabled": true },
+    { "name": "Rocket League", "processes": ["RocketLeague"], "enabled": true }
+  ],
+  "backgroundAppsToFreeze": [
+    "chrome",
+    "msedge",
+    "brave",
+    "opera",
+    "firefox",
+    "spotify",
+    "steamwebhelper",
+    "EpicGamesLauncher",
+    "OneDrive",
+    "Dropbox",
+    "discord_canary"
+  ],
+  "protectedApps": [
+    "Discord",
+    "obs64",
+    "Streamlabs OBS",
+    "vgc",
+    "vgtray",
+    "RiotClientServices",
+    "dwm",
+    "explorer",
+    "csrss",
+    "lsass",
+    "smss",
+    "services"
+  ],
+  "servicesToPause": [
+    "WSearch",
+    "SysMain",
+    "DiagTrack"
+  ],
+  "gpuClockLock": {
+    "enabled": true,
+    "targetClockMhz": 0,
+    "lockMinMax": true
+  },
+  "timerResolutionNs": 5000,
+  "coreIsolationEnabled": true,
+  "hotkeys": {
+    "forceOptimize": "Ctrl+Alt+O",
+    "toggleStandby": "Ctrl+Alt+S",
+    "toggleGpuLock": "Ctrl+Alt+G"
+  },
+  "startMinimizedToTray": true,
+  "showNotifications": true
+}

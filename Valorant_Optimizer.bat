@@ -1,11 +1,29 @@
 <# : Batch to PowerShell Polyglot - Double-click this .bat file directly
 @echo off
 setlocal
+cd /d "%~dp0"
+
+:: If --console was explicitly requested, fall back to legacy PowerShell console HUD
+if /i "%~1"=="--console" goto :run_console
+if /i "%~1"=="-console" goto :run_console
+
+:: Otherwise, launch the native companion directly in tray by default
+call "%~dp0run.bat" %*
+exit /b %errorlevel%
+
+:run_console
 :: Elevate to Administrator if not already elevated
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Requesting Administrator privileges...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+    if %errorlevel% neq 0 (
+        echo.
+        echo [X] Administrator privileges were not granted or UAC prompt was dismissed.
+        echo     Please right-click 'Valorant_Optimizer.bat' and select 'Run as administrator'.
+        echo.
+        pause
+    )
     exit /b
 )
 
@@ -38,7 +56,14 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     if ($Tray) { $argList += "-Tray" }
     if ($Daemon) { $argList += "-Daemon" }
     if ($NoNotify) { $argList += "-NoNotify" }
-    Start-Process powershell.exe -ArgumentList ($argList -join " ") -Verb RunAs
+    try {
+        Start-Process powershell.exe -ArgumentList ($argList -join " ") -Verb RunAs -ErrorAction Stop
+    } catch {
+        Write-Host "`n[X] Administrator privileges were not granted ($($_.Exception.Message))." -ForegroundColor Yellow
+        Write-Host "    The companion requires Administrator privileges to tune kernel timers and CPU priority." -ForegroundColor DarkGray
+        Write-Host "    Press any key to exit..." -ForegroundColor DarkGray
+        if ([Environment]::UserInteractive) { $null = [Console]::ReadKey($true) }
+    }
     exit
 }
 
@@ -187,15 +212,17 @@ try {
     Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 } catch {}
 
-$script:ConsoleHwnd = [NativeOptimizers]::GetConsoleWindow()
-if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
-    try { $script:ConsoleHwnd = (Get-Process -Id $PID).MainWindowHandle } catch {}
-}
+try {
+    $script:ConsoleHwnd = [NativeOptimizers]::GetConsoleWindow()
+    if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
+        try { $script:ConsoleHwnd = (Get-Process -Id $PID).MainWindowHandle } catch {}
+    }
 
-# If launched in Tray mode, hide console window immediately
-if ($Tray -and $script:ConsoleHwnd -ne [IntPtr]::Zero) {
-    [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_HIDE) | Out-Null
-}
+    # If launched in Tray mode, hide console window immediately
+    if ($Tray -and $script:ConsoleHwnd -ne [IntPtr]::Zero) {
+        [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_HIDE) | Out-Null
+    }
+} catch {}
 
 # ----------------- AUTO-CRASH RECOVERY CHECK -----------------
 if (Test-Path $BackupFilePath) {

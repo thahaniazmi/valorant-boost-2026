@@ -7,9 +7,9 @@ echo    LAUNCHING VALORANT WITH LOW-LATENCY TRAY COMPANION
 echo ==========================================================
 echo.
 
-:: 1. Launch the Optimizer directly into the system tray
+:: 1. Launch the Companion directly into the system tray
 echo [1/2] Launching Companion in Windows System Tray...
-start "" "%~dp0Valorant_Optimizer_Tray.bat"
+call "%~dp0run.bat"
 
 :: 2. Locate and launch Valorant
 echo [2/2] Launching Valorant...
@@ -48,7 +48,7 @@ set "VAL_STARTED=1"
 echo.
 echo [+] Valorant launched!
 echo [+] The Low-Latency Companion is active in your System Tray.
-echo     (Look for the red Valorant icon near your Windows clock)
+echo     (Look for the Valorant icon near your Windows clock)
 echo.
 timeout /t 3 >nul
 exit /b

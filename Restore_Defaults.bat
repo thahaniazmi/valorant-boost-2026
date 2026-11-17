@@ -1,27 +1,45 @@
-<# : Batch to PowerShell Polyglot - Double-click this .bat file directly
 @echo off
 setlocal
+cd /d "%~dp0"
+
 :: Elevate to Administrator if not already elevated
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Requesting Administrator privileges to safely restore Windows defaults...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+    if %errorlevel% neq 0 (
+        echo.
+        echo [X] Administrator privileges were not granted or UAC prompt was dismissed.
+        echo     Please right-click 'Restore_Defaults.bat' and select 'Run as administrator'.
+        echo.
+        pause
+    )
     exit /b
 )
 
-:: Set script directory and execute embedded PowerShell restore utility
-set "SCRIPT_DIR=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$script = [System.IO.File]::ReadAllText('%~f0'); Invoke-Expression $script"
-exit /b
-#>
+title Restore Windows Defaults
+echo ==========================================================
+echo       RESTORING STOCK WINDOWS & HARDWARE DEFAULTS
+echo ==========================================================
+echo.
 
-# PowerShell logic starts here
-$ScriptDir = if ($env:SCRIPT_DIR -and (Test-Path $env:SCRIPT_DIR)) { $env:SCRIPT_DIR } elseif ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
+:: 1. Revert via native companion if available
+if exist "%~dp0ValorantCompanion.exe" (
+    echo [1/2] Reverting driver locks and companion engine...
+    "%~dp0ValorantCompanion.exe" --restore
+    taskkill /f /im ValorantCompanion.exe >nul 2>&1
+)
 
-$restoreScript = Join-Path $ScriptDir "restore_defaults.ps1"
-if (Test-Path $restoreScript) {
-    & $restoreScript
-} else {
-    Write-Host "[!] restore_defaults.ps1 not found in $ScriptDir" -ForegroundColor Red
-    pause
-}
+:: 2. Run PowerShell restore script as secondary safety check
+if exist "%~dp0restore_defaults.ps1" (
+    echo [2/2] Running full system restore script...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0restore_defaults.ps1"
+)
+
+echo.
+echo ==========================================================
+echo  [+] SUCCESS: All stock defaults restored cleanly!
+echo ==========================================================
+echo.
+pause
+exit /b 0
