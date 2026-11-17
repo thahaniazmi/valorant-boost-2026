@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows;
@@ -177,8 +178,9 @@ namespace ValorantCompanionApp {
 
     // ----------------- REAL GPU HARDWARE CLOCK LOCK (NVIDIA-SMI) -----------------
     public static class GpuClockManager {
+        public static bool IsNvidiaAvailable = false;
         private static string _smiPath = null;
-        public static string DetectedGpuName = "Auto-Detecting...";
+        public static string DetectedGpuName = "Detecting Display...";
         public static int MaxBoostClock = 0;
         public static bool IsLocked = false;
 
@@ -205,7 +207,10 @@ namespace ValorantCompanionApp {
                     p.WaitForExit(3000);
                     if (!string.IsNullOrEmpty(output)) {
                         string[] parts = output.Trim().Split(',');
-                        if (parts.Length > 0) DetectedGpuName = parts[0].Trim();
+                        if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0].Trim())) {
+                            DetectedGpuName = parts[0].Trim();
+                            IsNvidiaAvailable = true;
+                        }
                         if (parts.Length > 1) {
                             int clk;
                             if (int.TryParse(parts[1].Trim(), out clk)) MaxBoostClock = clk;
@@ -213,11 +218,34 @@ namespace ValorantCompanionApp {
                     }
                 }
             } catch {
-                DetectedGpuName = "Standard / Non-NVIDIA Display";
+                IsNvidiaAvailable = false;
+            }
+
+            if (!IsNvidiaAvailable) {
+                try {
+                    for (int i = 0; i <= 8; i++) {
+                        string sub = string.Format(@"SYSTEM\CurrentControlSet\Control\Class\{{4d36e968-e325-11ce-bfc1-08002be10318}}\{0:D4}", i);
+                        using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(sub)) {
+                            if (k != null) {
+                                object desc = k.GetValue("DriverDesc");
+                                if (desc != null && !string.IsNullOrEmpty(desc.ToString())) {
+                                    DetectedGpuName = desc.ToString();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch {}
+
+                if (string.IsNullOrEmpty(DetectedGpuName) || DetectedGpuName == "Detecting Display...") {
+                    DetectedGpuName = "Standard Display Adapter";
+                }
             }
         }
 
         public static bool LockClocks(int customClock = 0) {
+            if (!IsNvidiaAvailable) return false;
+
             try {
                 int target = customClock > 0 ? customClock : MaxBoostClock;
                 if (target <= 0) {
@@ -238,6 +266,8 @@ namespace ValorantCompanionApp {
         }
 
         public static void ResetClocks() {
+            if (!IsNvidiaAvailable) return;
+
             try {
                 RunCmd("-rgc");
                 IsLocked = false;
@@ -262,7 +292,7 @@ namespace ValorantCompanionApp {
         }
     }
 
-    // ----------------- UNIVERSAL ESPORTS OPTIMIZATION ENGINE -----------------
+    // ----------------- OPTIMIZATION ENGINE -----------------
     public class OptimizationEngine {
         public AppConfig Config { get; private set; }
         public string ConfigPath { get; private set; }
@@ -426,7 +456,20 @@ namespace ValorantCompanionApp {
                 // 4. Power Plan & Core Unparking
                 try {
                     _originalPowerScheme = GetActivePowerScheme();
-                    RunPowercfg("/setactive e9a42b02-d5df-448d-aa00-03f14749eb61");
+                    string ultGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+                    string highGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+
+                    RunPowercfg("/setactive " + ultGuid);
+                    string cur = GetActivePowerScheme();
+                    if (!string.Equals(cur, ultGuid, StringComparison.OrdinalIgnoreCase)) {
+                        RunPowercfg("-duplicatescheme " + ultGuid);
+                        RunPowercfg("/setactive " + ultGuid);
+                        cur = GetActivePowerScheme();
+                        if (!string.Equals(cur, ultGuid, StringComparison.OrdinalIgnoreCase)) {
+                            RunPowercfg("/setactive " + highGuid);
+                        }
+                    }
+
                     RunPowercfg("/setacvalueindex scheme_current sub_processor CPMINCORES 100");
                     RunPowercfg("/setactive scheme_current");
                 } catch {}
@@ -563,11 +606,9 @@ namespace ValorantCompanionApp {
                 using (var p = Process.Start(psi)) {
                     string o = p.StandardOutput.ReadToEnd();
                     p.WaitForExit(1000);
-                    int idx = o.IndexOf('(');
-                    int idx2 = o.IndexOf(')');
-                    if (idx != -1 && idx2 > idx) {
-                        string guid = o.Substring(idx + 1, idx2 - idx - 1).Trim();
-                        return guid;
+                    Match m = Regex.Match(o, @"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}");
+                    if (m.Success) {
+                        return m.Value;
                     }
                 }
             } catch {}
@@ -1133,7 +1174,9 @@ namespace ValorantCompanionApp {
 
                 _txtRamStats.Text = string.Format("Physical RAM: {0:F1} GB / {1:F1} GB ({2:F0}% In Use)", usedMem / 1073741824.0, totalMem / 1073741824.0, pct);
 
-                string gpuLockStr = GpuClockManager.IsLocked ? string.Format("LOCKED @ Peak Boost ({0} MHz)", GpuClockManager.MaxBoostClock) : "Dynamic Scaling / Standby";
+                string gpuLockStr = GpuClockManager.IsLocked 
+                    ? string.Format("LOCKED @ Peak Boost ({0} MHz)", GpuClockManager.MaxBoostClock) 
+                    : (GpuClockManager.IsNvidiaAvailable ? "Dynamic Scaling / Standby" : "Dynamic Scaling (Standard)");
                 _txtGpuStats.Text = string.Format("{0}\nClock State: {1}", GpuClockManager.DetectedGpuName, gpuLockStr);
             } catch {}
         }
