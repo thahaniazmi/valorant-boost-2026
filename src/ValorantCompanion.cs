@@ -485,7 +485,7 @@ namespace ValorantCompanionApp {
                     GpuClockManager.LockClocks(Config.gpuClockLock.targetClockMhz);
                 }
 
-                // 7. Background App Deep Freeze & EcoQoS
+                // 7. Background App Deep Freeze & EcoQoS (Non-intrusive throttling + EcoQoS)
                 _suspendedPids.Clear();
                 int ecoCount = 0;
                 foreach (string appName in Config.backgroundAppsToFreeze) {
@@ -507,10 +507,6 @@ namespace ValorantCompanionApp {
                             if (NativeMethods.SetProcessInformation(p.Handle, NativeMethods.ProcessPowerThrottling, ref throttling, (uint)Marshal.SizeOf(throttling))) {
                                 ecoCount++;
                             }
-
-                            if (NativeMethods.NtSuspendProcess(p.Handle) == 0) {
-                                _suspendedPids.Add(p.Id);
-                            }
                         } catch {}
                     }
                 }
@@ -522,8 +518,13 @@ namespace ValorantCompanionApp {
                     RunServiceCmd("stop", svc);
                 }
 
-                // 9. Quick Standby Memory Purge & DNS Flush
-                PurgeMemoryAndCaches();
+                // 9. Flush DNS cleanly (Avoid wiping active DXCache on game launch to prevent shader recompilation stutters)
+                try {
+                    GC.Collect();
+                    NativeMethods.EmptyWorkingSet(Process.GetCurrentProcess().Handle);
+                    var pDns = Process.Start(new ProcessStartInfo("ipconfig", "/flushdns") { CreateNoWindow = true, UseShellExecute = false });
+                    if (pDns != null) pDns.WaitForExit(2000);
+                } catch {}
 
                 IsOptimized = true;
                 StatusText = string.Format("ACTIVE: {0} (PID: {1})", ActiveGameName, ActiveGamePid);
@@ -562,6 +563,20 @@ namespace ValorantCompanionApp {
                 foreach (string svc in Config.servicesToPause) {
                     RunServiceCmd("start", svc);
                 }
+
+                // Reset game process priority and affinity if process is still alive
+                if (ActiveGamePid > 0) {
+                    try {
+                        Process gameProc = Process.GetProcessById(ActiveGamePid);
+                        if (gameProc != null && !gameProc.HasExited) {
+                            if (_originalAffinity != IntPtr.Zero) {
+                                NativeMethods.SetProcessAffinityMask(gameProc.Handle, _originalAffinity);
+                            }
+                            gameProc.PriorityClass = ProcessPriorityClass.Normal;
+                        }
+                    } catch {}
+                }
+                _originalAffinity = IntPtr.Zero;
 
                 IsOptimized = false;
                 ActiveGamePid = 0;
