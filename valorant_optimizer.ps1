@@ -21,14 +21,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
     if ($Tray) { $argList += "-Tray" }
     if ($Daemon) { $argList += "-Daemon" }
     if ($NoNotify) { $argList += "-NoNotify" }
-    try {
-        Start-Process powershell.exe -ArgumentList ($argList -join " ") -Verb RunAs -ErrorAction Stop
-    } catch {
-        Write-Host "`n[X] Administrator privileges were not granted ($($_.Exception.Message))." -ForegroundColor Yellow
-        Write-Host "    The companion requires Administrator privileges to tune kernel timers and CPU priority." -ForegroundColor DarkGray
-        Write-Host "    Press any key to exit..." -ForegroundColor DarkGray
-        if ([Environment]::UserInteractive) { $null = [Console]::ReadKey($true) }
-    }
+    Start-Process powershell.exe -ArgumentList ($argList -join " ") -Verb RunAs
     exit
 }
 
@@ -54,23 +47,12 @@ $TargetProcessName = "VALORANT-Win64-Shipping"
 $FallbackProcessName = "VALORANT"
 # Protected apps: Discord, OBS, audio services, and Vanguard are NEVER throttled or suspended
 $ProtectedApps = @("Discord", "obs64", "Streamlabs OBS", "vgc", "vgtray", "RiotClientServices", "dwm", "explorer", "csrss", "lsass", "smss", "services")
-$BackgroundHogs = @("chrome", "msedge", "brave", "opera", "firefox", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive", "Dropbox", "discord_canary")
+$BackgroundHogs = @("chrome", "msedge", "brave", "opera", "spotify", "steamwebhelper", "EpicGamesLauncher", "OneDrive")
 $PauseServices = @("WSearch", "SysMain", "DiagTrack")
 $PollIntervalSeconds = 1
 
 $ScriptDir = if ($env:SCRIPT_DIR -and (Test-Path $env:SCRIPT_DIR)) { $env:SCRIPT_DIR } elseif ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
 $BackupFilePath = Join-Path $ScriptDir "optimizer_backup.json"
-$ConfigFilePath = Join-Path $ScriptDir "config.json"
-
-# Load customizable process list and settings from config.json
-if (Test-Path $ConfigFilePath) {
-    try {
-        $rawConfig = Get-Content $ConfigFilePath -Raw | ConvertFrom-Json
-        if ($rawConfig.backgroundAppsToFreeze) { $BackgroundHogs = @($rawConfig.backgroundAppsToFreeze) }
-        if ($rawConfig.protectedApps) { $ProtectedApps = @($rawConfig.protectedApps) }
-        if ($rawConfig.servicesToPause) { $PauseServices = @($rawConfig.servicesToPause) }
-    } catch {}
-}
 
 # ----------------- P/INVOKE: NATIVE WIN32, NT KERNEL & SCHEDULER APIS -----------------
 try {
@@ -177,33 +159,6 @@ public class NativeOptimizers {
             return false;
         }
     }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern IntPtr GetStdHandle(int nStdHandle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-
-    public const int STD_INPUT_HANDLE = -10;
-    public const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
-    public const uint ENABLE_EXTENDED_FLAGS = 0x0080;
-
-    public static void DisableConsoleQuickEdit() {
-        try {
-            IntPtr handle = GetStdHandle(STD_INPUT_HANDLE);
-            if (handle != IntPtr.Zero && handle != new IntPtr(-1)) {
-                uint mode;
-                if (GetConsoleMode(handle, out mode)) {
-                    mode &= ~ENABLE_QUICK_EDIT_MODE;
-                    mode |= ENABLE_EXTENDED_FLAGS;
-                    SetConsoleMode(handle, mode);
-                }
-            }
-        } catch {}
-    }
 }
 "@
     Add-Type -TypeDefinition $nativeCode -ErrorAction SilentlyContinue
@@ -215,22 +170,15 @@ try {
     Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 } catch {}
 
-try {
-    # Disable Windows Console QuickEdit Mode to prevent accidental mouse-click script freeze
-    [NativeOptimizers]::DisableConsoleQuickEdit()
-} catch {}
+$script:ConsoleHwnd = [NativeOptimizers]::GetConsoleWindow()
+if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
+    try { $script:ConsoleHwnd = (Get-Process -Id $PID).MainWindowHandle } catch {}
+}
 
-try {
-    $script:ConsoleHwnd = [NativeOptimizers]::GetConsoleWindow()
-    if ($script:ConsoleHwnd -eq [IntPtr]::Zero) {
-        try { $script:ConsoleHwnd = (Get-Process -Id $PID).MainWindowHandle } catch {}
-    }
-
-    # If launched in Tray mode, hide console window immediately
-    if ($Tray -and $script:ConsoleHwnd -ne [IntPtr]::Zero) {
-        [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_HIDE) | Out-Null
-    }
-} catch {}
+# If launched in Tray mode, hide console window immediately
+if ($Tray -and $script:ConsoleHwnd -ne [IntPtr]::Zero) {
+    [NativeOptimizers]::ShowWindow($script:ConsoleHwnd, [NativeOptimizers]::SW_HIDE) | Out-Null
+}
 
 # ----------------- AUTO-CRASH RECOVERY CHECK -----------------
 if (Test-Path $BackupFilePath) {
@@ -520,24 +468,6 @@ try {
 } catch {}
 
 function Apply-GpuPowerProfile {
-    # 1. Driver-Level Hardware Boost Clock Lock (nvidia-smi)
-    try {
-        $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-        if ($smi) {
-            $maxClockOut = nvidia-smi --query-gpu=clocks.max.graphics --format=csv,noheader,nounits 2>$null
-            $maxClock = 0
-            if ($maxClockOut -and [int]::TryParse($maxClockOut.Trim(), [ref]$maxClock) -and $maxClock -gt 0) {
-                # Enable Persistence Mode
-                nvidia-smi -pm 1 2>$null | Out-Null
-                # Lock GPU Clocks to Peak Boost
-                nvidia-smi -lgc "$maxClock,$maxClock" 2>$null | Out-Null
-                $script:GpuClockLocked = $true
-                $script:GpuTargetClock = $maxClock
-            }
-        }
-    } catch {}
-
-    # 2. Registry PowerMizer Profile
     $classPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
     if (Test-Path $classPath) {
         Get-ChildItem $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match "^\d{4}$" } | ForEach-Object {
@@ -557,16 +487,6 @@ function Apply-GpuPowerProfile {
 }
 
 function Restore-GpuPowerProfile {
-    # 1. Reset GPU Hardware Clocks via nvidia-smi
-    try {
-        $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-        if ($smi) {
-            nvidia-smi -rgc 2>$null | Out-Null
-            $script:GpuClockLocked = $false
-        }
-    } catch {}
-
-    # 2. Revert Registry Overrides
     foreach ($path in $script:OriginalPowerMizer.Keys) {
         $saved = $script:OriginalPowerMizer[$path]
         if ($null -ne $saved.PowerMizerEnable) {
@@ -807,46 +727,13 @@ try {
     $contextMenu.Items.Add($script:ToggleHudMenuItem) | Out-Null
 
     $purgeMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
-    $purgeMenuItem.Text = "Purge Caches & Standby Memory Now [Ctrl+Alt+O]"
+    $purgeMenuItem.Text = "Purge Caches & Standby Memory Now"
     $purgeMenuItem.add_Click({
         Clean-StaleCaches
         Purge-SystemMemoryAndStandby
         Show-TrayNotification -Title "Valorant Optimizer" -Text "DirectX Cache, Shader Cache, and Standby RAM purged successfully."
     })
     $contextMenu.Items.Add($purgeMenuItem) | Out-Null
-
-    $pauseSubmenu = New-Object System.Windows.Forms.ToolStripMenuItem
-    $pauseSubmenu.Text = "Pause Optimizations"
-
-    $pause30Item = New-Object System.Windows.Forms.ToolStripMenuItem
-    $pause30Item.Text = "Pause for 30 Minutes"
-    $pause30Item.add_Click({
-        $script:PausedUntil = (Get-Date).AddMinutes(30)
-        $script:IsPaused = $true
-        Restore-SystemState
-        Show-TrayNotification -Title "Optimizations Paused" -Text "Standby & optimizations paused for 30 minutes."
-    })
-    $pauseSubmenu.DropDownItems.Add($pause30Item) | Out-Null
-
-    $pause60Item = New-Object System.Windows.Forms.ToolStripMenuItem
-    $pause60Item.Text = "Pause for 1 Hour"
-    $pause60Item.add_Click({
-        $script:PausedUntil = (Get-Date).AddHours(1)
-        $script:IsPaused = $true
-        Restore-SystemState
-        Show-TrayNotification -Title "Optimizations Paused" -Text "Standby & optimizations paused for 1 hour."
-    })
-    $pauseSubmenu.DropDownItems.Add($pause60Item) | Out-Null
-
-    $resumeItem = New-Object System.Windows.Forms.ToolStripMenuItem
-    $resumeItem.Text = "Resume Optimizations Now"
-    $resumeItem.add_Click({
-        $script:PausedUntil = $null
-        $script:IsPaused = $false
-        Show-TrayNotification -Title "Optimizations Resumed" -Text "Companion is back on standby for Valorant."
-    })
-    $pauseSubmenu.DropDownItems.Add($resumeItem) | Out-Null
-    $contextMenu.Items.Add($pauseSubmenu) | Out-Null
 
     $contextMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
 
@@ -1068,16 +955,9 @@ try {
                 }
             } catch {}
 
-            $valProc = $null
-            $matchedGame = "VALORANT"
-            $allTargets = @($TargetProcessName, $FallbackProcessName, "cs2", "r5apex", "FortniteClient-Win64-Shipping", "Overwatch", "cod", "RainbowSix", "Discovery", "MarvelRivals", "League of Legends", "RocketLeague")
-            foreach ($procName in $allTargets) {
-                $candidate = Get-Process -Name $procName -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($candidate -and -not $candidate.HasExited) {
-                    $valProc = $candidate
-                    $matchedGame = $procName
-                    break
-                }
+            $valProc = Get-Process -Name $TargetProcessName -ErrorAction SilentlyContinue
+            if ($null -eq $valProc) {
+                $valProc = Get-Process -Name $FallbackProcessName -ErrorAction SilentlyContinue
             }
 
             if ($null -eq $valProc) {

@@ -1,8 +1,3 @@
-# Build outputs
-bin/
-obj/
-*.pdb
-
 # Agent metadata & skills
 .agent/
 
@@ -14,4 +9,3 @@ $RECYCLE.BIN/
 
 # Logs
 *.log
-*.old

@@ -1,26 +1,15 @@
 @echo off
 setlocal
-set "ROOT_DIR=%~dp0.."
-cd /d "%ROOT_DIR%"
+cd /d "%~dp0"
 
 echo ==========================================================
-echo        LAUNCHING VALORANT WITH LOW-LATENCY COMPANION
+echo    LAUNCHING VALORANT WITH LOW-LATENCY TRAY COMPANION
 echo ==========================================================
 echo.
 
-:: 1. Launch the Companion in the system tray
+:: 1. Launch the Optimizer directly into the system tray
 echo [1/2] Launching Companion in Windows System Tray...
-set "TARGET_EXE=%ROOT_DIR%\ValorantCompanion.exe"
-if not exist "%TARGET_EXE%" (
-    if exist "%ROOT_DIR%\bin\ValorantCompanion.exe" (
-        set "TARGET_EXE=%ROOT_DIR%\bin\ValorantCompanion.exe"
-    ) else if exist "%~dp0build.bat" (
-        call "%~dp0build.bat"
-    )
-)
-if exist "%TARGET_EXE%" (
-    start "" "%TARGET_EXE%"
-)
+start "" "%~dp0Valorant_Optimizer_Tray.bat"
 
 :: 2. Locate and launch Valorant
 echo [2/2] Launching Valorant...
@@ -58,8 +47,8 @@ set "VAL_STARTED=1"
 :done
 echo.
 echo [+] Valorant launched!
-echo [+] The Companion is active in your System Tray.
-echo     (Look for the Valorant icon near your Windows clock)
+echo [+] The Low-Latency Companion is active in your System Tray.
+echo     (Look for the red Valorant icon near your Windows clock)
 echo.
 timeout /t 3 >nul
-exit /b 0
+exit /b

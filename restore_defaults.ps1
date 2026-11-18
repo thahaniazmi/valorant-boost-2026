@@ -17,13 +17,7 @@ param(
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "[!] Administrator privileges required. Requesting elevation..." -ForegroundColor Yellow
-    try {
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs -ErrorAction Stop
-    } catch {
-        Write-Host "`n[X] Administrator privileges were not granted ($($_.Exception.Message))." -ForegroundColor Yellow
-        Write-Host "    Press any key to exit..." -ForegroundColor DarkGray
-        if ([Environment]::UserInteractive) { $null = [Console]::ReadKey($true) }
-    }
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
     exit
 }
 
@@ -251,17 +245,8 @@ foreach ($svc in $servicesToEnsure) {
     } catch {}
 }
 
-# 9. GPU POWERMIZER / HARDWARE CLOCK RESTORATION
-Write-Host "`n [9/9] Checking GPU Profile Overrides & Hardware Clocks..." -ForegroundColor Yellow
-try {
-    # Reset GPU Hardware Clocks via nvidia-smi
-    $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-    if ($smi) {
-        nvidia-smi -rgc 2>$null | Out-Null
-        Write-Host "       [OK] GPU hardware boost clocks reset to default dynamic scaling (nvidia-smi -rgc)." -ForegroundColor Green
-    }
-} catch {}
-
+# 9. GPU POWERMIZER / MSI RESTORATION (IF APPLIED PREVIOUSLY)
+Write-Host "`n [9/9] Checking GPU Profile Overrides..." -ForegroundColor Yellow
 try {
     $classPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
     if (Test-Path $classPath) {
@@ -269,7 +254,7 @@ try {
             Remove-ItemProperty -Path $_.PSPath -Name "PowerMizerEnable", "PowerMizerLevel", "PowerMizerLevelAC" -ErrorAction SilentlyContinue
         }
     }
-    Write-Host "       [OK] GPU power management registry overrides cleared." -ForegroundColor Green
+    Write-Host "       [OK] GPU power management overrides cleared." -ForegroundColor Green
 } catch {}
 
 # FLUSH DNS CACHE
